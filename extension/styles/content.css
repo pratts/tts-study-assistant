@@ -1,0 +1,45 @@
+/* Tooltip styles */
+.tts-tooltip {
+    position: absolute;
+    z-index: 999999;
+    background: #2563eb;
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: opacity 0.2s ease;
+    pointer-events: auto;
+}
+
+.tts-tooltip.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.tts-speak-button {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 20px;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+}
+
+.tts-speak-button:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.tts-speak-button:active {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(0.95);
+}
+
+/* Ensure tooltip appears above other elements */
+.tts-tooltip {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}

@@ -1,0 +1,22 @@
+{
+  "name": "tts-study-assistant",
+  "version": "1.0.0",
+  "description": "Instant text-to-speech Chrome extension with study features",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com-pratts:pratts/tts-study-assistant.git"
+  },
+  "keywords": [
+    "tts",
+    "text-to-speech",
+    "chrome-extension",
+    "study",
+    "learning"
+  ],
+  "author": "Prateek Sharma",
+  "license": "MIT"
+}

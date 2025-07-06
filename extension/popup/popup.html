@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>TTS Study Assistant</h1>
+
+        <div class="status">
+            <span class="status-label">Status:</span>
+            <span id="status-text" class="status-active">Active</span>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="rate-slider">Speed</label>
+                <div class="slider-container">
+                    <input type="range" id="rate-slider" min="0.5" max="2" step="0.1" value="1">
+                    <span id="rate-value">1.0x</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="pitch-slider">Pitch</label>
+                <div class="slider-container">
+                    <input type="range" id="pitch-slider" min="0.5" max="2" step="0.1" value="1">
+                    <span id="pitch-value">1.0</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="volume-slider">Volume</label>
+                <div class="slider-container">
+                    <input type="range" id="volume-slider" min="0" max="1" step="0.1" value="1">
+                    <span id="volume-value">100%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="stop-button" class="btn btn-secondary">Stop Speaking</button>
+            <button id="toggle-button" class="btn btn-primary">Disable</button>
+        </div>
+
+        <div class="shortcut-info">
+            <kbd>Ctrl+Shift+S</kbd> to speak selected text
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>
