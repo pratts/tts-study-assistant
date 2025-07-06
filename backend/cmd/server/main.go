@@ -2,13 +2,17 @@ package main
 
 import (
 	"log"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
 	"github.com/pratts/tts-study-assistant/backend/internal/config"
 	"github.com/pratts/tts-study-assistant/backend/internal/database"
+	"github.com/pratts/tts-study-assistant/backend/internal/handlers"
+	"github.com/pratts/tts-study-assistant/backend/internal/middleware"
 )
 
 func main() {
@@ -28,6 +32,12 @@ func main() {
 	// Middleware
 	app.Use(logger.New())
 	app.Use(recover.New())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins:     strings.Join(cfg.CORSOrigins, ","),
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+		AllowCredentials: true,
+	}))
 
 	// Routes
 	setupRoutes(app, cfg)
@@ -48,20 +58,36 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 		})
 	})
 
-	// API routes will be added here
+	// Initialize handlers
+	authHandler := handlers.NewAuthHandler(cfg)
+	notesHandler := handlers.NewNotesHandler()
+	userHandler := handlers.NewUserHandler()
+
+	// API routes
 	api := app.Group("/api/v1")
 
-	// Auth routes (to be implemented)
+	// Auth routes (public)
 	auth := api.Group("/auth")
-	auth.Post("/register", func(c *fiber.Ctx) error {
-		return c.SendString("Register endpoint")
-	})
+	auth.Post("/register", authHandler.Register)
+	auth.Post("/login", authHandler.Login)
+	auth.Post("/refresh", authHandler.Refresh)
+	auth.Post("/logout", authHandler.Logout)
 
-	// Notes routes (to be implemented)
-	notes := api.Group("/notes")
-	notes.Get("/", func(c *fiber.Ctx) error {
-		return c.SendString("Notes endpoint")
-	})
+	// Protected routes
+	protected := api.Group("", middleware.AuthMiddleware(cfg))
+
+	// Notes routes (protected)
+	notes := protected.Group("/notes")
+	notes.Get("/", notesHandler.GetNotes)
+	notes.Post("/", notesHandler.CreateNote)
+	notes.Get("/:id", notesHandler.GetNote)
+	notes.Put("/:id", notesHandler.UpdateNote)
+	notes.Delete("/:id", notesHandler.DeleteNote)
+
+	// User routes (protected)
+	user := protected.Group("/user")
+	user.Get("/profile", userHandler.GetProfile)
+	user.Put("/profile", userHandler.UpdateProfile)
 }
 
 func customErrorHandler(c *fiber.Ctx, err error) error {
