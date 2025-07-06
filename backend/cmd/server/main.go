@@ -49,7 +49,7 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	})
 
 	// API routes will be added here
-	api := app.Group("/api")
+	api := app.Group("/api/v1")
 
 	// Auth routes (to be implemented)
 	auth := api.Group("/auth")
