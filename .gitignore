@@ -1,0 +1,21 @@
+# General
+.DS_Store
+.env
+
+# Backend
+backend/tmp/
+backend/bin/
+backend/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Extension
+extension.zip
+tts-extension.zip
+
+# IDE
+.vscode/
+.idea/
