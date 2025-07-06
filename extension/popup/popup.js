@@ -1,14 +1,29 @@
 // Popup script
+let currentState = null;
+
 document.addEventListener('DOMContentLoaded', async () => {
-    // Get current settings
+    // Get current settings and state
     const data = await chrome.storage.sync.get(['settings']);
     const settings = data.settings || {};
 
-    // Initialize UI with current settings
+    // Get TTS state
+    const stateResponse = await chrome.runtime.sendMessage({ action: 'getState' });
+    currentState = stateResponse.state;
+
+    // Initialize UI
     updateUI(settings);
+    updatePlaybackUI(currentState);
 
     // Setup event listeners
     setupEventListeners();
+
+    // Listen for state updates
+    chrome.runtime.onMessage.addListener((request) => {
+        if (request.action === 'stateUpdate') {
+            currentState = request.state;
+            updatePlaybackUI(currentState);
+        }
+    });
 });
 
 function updateUI(settings) {
@@ -32,10 +47,43 @@ function updateUI(settings) {
         toggleButton.textContent = 'Disable';
         toggleButton.className = 'btn btn-primary';
     } else {
-        statusText.textContent = 'Inactive';
+        statusText.textContent = 'Disabled';
         statusText.className = 'status-inactive';
         toggleButton.textContent = 'Enable';
         toggleButton.className = 'btn btn-secondary';
+    }
+}
+
+function updatePlaybackUI(state) {
+    const playbackStatus = document.getElementById('playback-status');
+    const playbackState = document.getElementById('playback-state');
+    const playPauseButton = document.getElementById('play-pause-button');
+    const queueInfo = document.getElementById('queue-info');
+    const queueCount = document.getElementById('queue-count');
+
+    if (state.isPlaying || state.isPaused) {
+        playbackStatus.classList.remove('hidden');
+        playPauseButton.classList.remove('hidden');
+
+        if (state.isPlaying) {
+            playbackState.textContent = 'Playing...';
+            playPauseButton.textContent = 'Pause';
+            playPauseButton.onclick = () => pauseSpeaking();
+        } else if (state.isPaused) {
+            playbackState.textContent = 'Paused';
+            playPauseButton.textContent = 'Resume';
+            playPauseButton.onclick = () => resumeSpeaking();
+        }
+
+        if (state.queue.length > 0) {
+            queueInfo.classList.remove('hidden');
+            queueCount.textContent = state.queue.length;
+        } else {
+            queueInfo.classList.add('hidden');
+        }
+    } else {
+        playbackStatus.classList.add('hidden');
+        playPauseButton.classList.add('hidden');
     }
 }
 
@@ -83,4 +131,12 @@ async function updateSetting(key, value) {
     settings[key] = value;
 
     await chrome.storage.sync.set({ settings });
+}
+
+function pauseSpeaking() {
+    chrome.runtime.sendMessage({ action: 'pause' });
+}
+
+function resumeSpeaking() {
+    chrome.runtime.sendMessage({ action: 'resume' });
 }

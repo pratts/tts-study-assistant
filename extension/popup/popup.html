@@ -15,6 +15,15 @@
             <span id="status-text" class="status-active">Active</span>
         </div>
 
+        <div id="playback-status" class="playback-status hidden">
+            <div class="playback-info">
+                <span id="playback-state">Idle</span>
+            </div>
+            <div class="queue-info hidden" id="queue-info">
+                <span>Queue: <span id="queue-count">0</span> items</span>
+            </div>
+        </div>
+
         <div class="controls">
             <div class="control-group">
                 <label for="rate-slider">Speed</label>
@@ -42,7 +51,8 @@
         </div>
 
         <div class="actions">
-            <button id="stop-button" class="btn btn-secondary">Stop Speaking</button>
+            <button id="play-pause-button" class="btn btn-primary hidden">Pause</button>
+            <button id="stop-button" class="btn btn-secondary">Stop</button>
             <button id="toggle-button" class="btn btn-primary">Disable</button>
         </div>
 

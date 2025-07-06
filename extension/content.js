@@ -6,20 +6,26 @@ let isEnabled = true;
 let selectedText = '';
 let selectionTimeout = null;
 let tooltip = null;
+let queueDialog = null;
 
 // Initialize
 (async function init() {
     // Get initial settings
-    const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
-    if (response && response.enabled !== undefined) {
-        isEnabled = response.enabled;
+    try {
+        const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
+        if (response && response.enabled !== undefined) {
+            isEnabled = response.enabled;
+        }
+    } catch (e) {
+        console.log('Settings not loaded:', e);
     }
 
     // Setup event listeners
     setupEventListeners();
 
-    // Create tooltip element
+    // Create UI elements
     createTooltip();
+    createQueueDialog();
 })();
 
 // Setup event listeners
@@ -38,6 +44,15 @@ function setupEventListeners() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'speakSelection') {
             speakSelectedText();
+        }
+    });
+
+    // Storage change listener for settings
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'sync' && changes.settings) {
+            const newSettings = changes.settings.newValue;
+            isEnabled = newSettings.enabled !== false;
+            console.log('Settings updated, enabled:', isEnabled);
         }
     });
 }
@@ -60,6 +75,11 @@ function handleMouseDown(event) {
     // Hide tooltip when user clicks
     if (tooltip && !tooltip.contains(event.target)) {
         hideTooltip();
+    }
+
+    // Hide queue dialog when user clicks outside
+    if (queueDialog && !queueDialog.contains(event.target)) {
+        hideQueueDialog();
     }
 }
 
@@ -104,6 +124,39 @@ function createTooltip() {
     document.body.appendChild(tooltip);
 }
 
+// Create queue dialog
+function createQueueDialog() {
+    queueDialog = document.createElement('div');
+    queueDialog.id = 'tts-queue-dialog';
+    queueDialog.className = 'tts-queue-dialog hidden';
+    queueDialog.innerHTML = `
+    <div class="tts-dialog-content">
+      <h3>Text already playing</h3>
+      <p>What would you like to do with the new selection?</p>
+      <div class="tts-dialog-buttons">
+        <button id="tts-append">Add to Queue</button>
+        <button id="tts-replace">Replace Current</button>
+        <button id="tts-cancel">Cancel</button>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(queueDialog);
+
+    // Add event listeners
+    document.getElementById('tts-append').addEventListener('click', () => {
+        appendToQueue();
+    });
+
+    document.getElementById('tts-replace').addEventListener('click', () => {
+        replaceQueue();
+    });
+
+    document.getElementById('tts-cancel').addEventListener('click', () => {
+        hideQueueDialog();
+    });
+}
+
 // Show tooltip near selection
 function showTooltip(selection) {
     if (!tooltip || selection.rangeCount === 0) return;
@@ -142,26 +195,77 @@ function hideTooltip() {
     }
 }
 
+// Show queue dialog
+function showQueueDialog() {
+    if (queueDialog) {
+        queueDialog.classList.remove('hidden');
+    }
+}
+
+// Hide queue dialog
+function hideQueueDialog() {
+    if (queueDialog) {
+        queueDialog.classList.add('hidden');
+    }
+}
+
 // Speak selected text
 async function speakSelectedText() {
+    if (!isEnabled) {
+        console.log('TTS is disabled');
+        return;
+    }
+
     if (!selectedText) {
         const selection = window.getSelection();
         selectedText = selection.toString().trim();
     }
 
     if (selectedText) {
-        // Send to background script
-        chrome.runtime.sendMessage({
-            action: 'speak',
-            text: selectedText,
-            options: {}
+        try {
+            // Send to background script
+            const response = await chrome.runtime.sendMessage({
+                action: 'speak',
+                text: selectedText,
+                options: {}
+            });
+
+            // Handle queue decision
+            if (response.status === 'queue_decision_needed') {
+                showQueueDialog();
+            } else {
+                // Hide tooltip after speaking starts
+                hideTooltip();
+            }
+        } catch (e) {
+            console.error('Error sending message:', e);
+        }
+    }
+}
+
+// Append to queue
+async function appendToQueue() {
+    if (selectedText) {
+        await chrome.runtime.sendMessage({
+            action: 'appendToQueue',
+            text: selectedText
         });
 
-        // Hide tooltip after speaking starts
+        hideQueueDialog();
         hideTooltip();
+    }
+}
 
-        // Clear selection (optional - remove if you want to keep selection)
-        // window.getSelection().removeAllRanges();
+// Replace queue
+async function replaceQueue() {
+    if (selectedText) {
+        await chrome.runtime.sendMessage({
+            action: 'replaceQueue',
+            text: selectedText
+        });
+
+        hideQueueDialog();
+        hideTooltip();
     }
 }
 
