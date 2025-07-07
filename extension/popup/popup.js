@@ -171,12 +171,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // On load, check for token and fetch profile
     const auth = await getAuth();
-    if (auth.access_token) {
+    if (auth.access_token && auth.user) {
+        authState.loggedIn = true;
+        authState.username = auth.user.name || auth.user.email;
+        // Optionally, refresh profile from backend:
         try {
             const profile = await fetchProfile(auth.access_token);
-            authState.loggedIn = true;
-            authState.username = profile.name || profile.email;
+            console.log()
+            authState.username = profile.data.name || profile.data.email;
+            // Update stored user info
+            await chrome.storage.local.set({ user: profile });
         } catch {
+            // If token expired or profile fetch fails, clear auth
             await clearAuth();
             authState.loggedIn = false;
             authState.username = null;
