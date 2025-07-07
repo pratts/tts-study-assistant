@@ -1,6 +1,12 @@
 // Background service worker - handles extension logic
 console.log('TTS Study Assistant - Background service worker loaded');
 
+import { AuthManager } from './js/auth-manager.js';
+import { ApiClient } from './js/api-client.js';
+
+const authManager = new AuthManager();
+const apiClient = new ApiClient(authManager);
+
 // State management
 let ttsState = {
     isPlaying: false,
@@ -22,6 +28,12 @@ chrome.runtime.onInstalled.addListener(() => {
             enabled: true
         }
     });
+
+    chrome.contextMenus.create({
+        id: 'save-to-tts',
+        title: 'Save to TTS Notes',
+        contexts: ['selection']
+    });
     console.log('Default settings initialized');
 });
 
@@ -30,6 +42,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Message received:', request.action);
 
     switch (request.action) {
+        case 'saveNote':
+            handleSaveNote(request.noteData, sendResponse);
+            return true; // Will respond asynchronously
+
+        case 'openPopup':
+            chrome.action.openPopup();
+            break;
+
         case 'speak':
             handleSpeakRequest(request.text, request.options, sendResponse);
             return true; // Will respond asynchronously
@@ -245,5 +265,80 @@ function stopSpeaking() {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url) {
         // Content script should auto-inject, but this is a fallback
+    }
+});
+
+// Handle note saving
+async function handleSaveNote(noteData, sendResponse) {
+    try {
+        // Check if user is authenticated
+        const isAuthenticated = await authManager.checkSession();
+
+        if (!isAuthenticated) {
+            sendResponse({ success: false, error: 'NOT_AUTHENTICATED' });
+            return;
+        }
+
+        // Save the note
+        const response = await apiClient.createNote(noteData);
+
+        // Update badge with note count
+        updateNoteBadge();
+
+        sendResponse({ success: true, note: response });
+    } catch (error) {
+        console.error('Failed to save note:', error);
+        sendResponse({ success: false, error: error.message });
+    }
+}
+
+// Update badge to show note count
+async function updateNoteBadge() {
+    try {
+        const notes = await apiClient.getNotes();
+        const count = notes.length;
+
+        chrome.action.setBadgeText({
+            text: count > 0 ? count.toString() : ''
+        });
+        chrome.action.setBadgeBackgroundColor({
+            color: '#4688F1'
+        });
+    } catch (error) {
+        console.error('Failed to update badge:', error);
+    }
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === 'save-to-tts' && info.selectionText) {
+        const noteData = {
+            content: info.selectionText,
+            source_url: tab.url,
+            source_title: tab.title
+        };
+
+        try {
+            const isAuthenticated = await authManager.checkSession();
+
+            if (!isAuthenticated) {
+                // Open popup for login
+                chrome.action.openPopup();
+                return;
+            }
+
+            await apiClient.createNote(noteData);
+
+            // Show notification
+            chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icons/icon-48.png',
+                title: 'Note Saved!',
+                message: 'Selected text has been saved to your notes.'
+            });
+
+            updateNoteBadge();
+        } catch (error) {
+            console.error('Failed to save note:', error);
+        }
     }
 });

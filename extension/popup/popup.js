@@ -81,6 +81,10 @@ async function fetchProfile(token) {
     return apiRequest('/user/profile', { token });
 }
 
+async function fetchNotes(token) {
+    return apiRequest('/notes', { token });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Get current settings and state
     const data = await chrome.storage.sync.get(['settings']);
@@ -135,6 +139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             authState.username = resp.data.user.name || resp.data.user.email;
             hideModal('login-modal-overlay');
             updateAuthHeader();
+            loadRecentNotes();
         } catch (err) {
             alert(err.message || 'Login failed');
         }
@@ -425,4 +430,50 @@ async function updateSetting(key, value) {
     settings[key] = value;
 
     await chrome.storage.sync.set({ settings });
+}
+
+async function loadRecentNotes() {
+    try {
+        const auth = await getAuth();
+        if (!auth.access_token) {
+            await clearAuth();
+            authState.loggedIn = false;
+            authState.username = null;
+        }
+        console.log('fetching notes: ', auth);
+        const notes = await fetchNotes(auth.access_token);
+        console.log('notes: ', notes);
+        const recentNotes = notes.data.slice(0, 5); // Show last 5 notes
+
+        const notesListEl = document.getElementById('notes-list');
+        notesListEl.innerHTML = '';
+
+        if (recentNotes.length === 0) {
+            notesListEl.innerHTML = '<p class="no-notes">No notes yet. Select text on any page and save!</p>';
+            return;
+        }
+
+        recentNotes.forEach(note => {
+            const noteEl = document.createElement('div');
+            noteEl.className = 'note-item';
+            noteEl.innerHTML = `
+          <p class="note-content">${truncateText(note.content, 100)}</p>
+          <p class="note-source">${note.source_title || 'Untitled'}</p>
+          <p class="note-date">${formatDate(note.created_at)}</p>
+        `;
+            notesListEl.appendChild(noteEl);
+        });
+    } catch (error) {
+        console.error('Failed to load notes:', error);
+    }
+}
+
+function truncateText(text, maxLength) {
+    if (text.length <= maxLength) return text;
+    return text.substr(0, maxLength) + '...';
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 }

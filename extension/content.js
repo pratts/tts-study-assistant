@@ -120,7 +120,16 @@ function createTooltip() {
     speakButton.title = 'Speak selected text (Ctrl+Shift+S)';
     speakButton.addEventListener('click', speakSelectedText);
 
+
+    // ADD SAVE BUTTON
+    const saveButton = document.createElement('button');
+    saveButton.className = 'tts-save-button';
+    saveButton.innerHTML = '📝';
+    saveButton.title = 'Save as note';
+    saveButton.addEventListener('click', saveSelectedNote);
+
     tooltip.appendChild(speakButton);
+    tooltip.appendChild(saveButton);
     document.body.appendChild(tooltip);
 }
 
@@ -243,6 +252,8 @@ async function speakSelectedText() {
             // Clear selectedText to avoid repeat
             selectedText = '';
             setTimeout(() => { ttsRequestInProgress = false; }, 1000);
+
+            await saveNoteInBackground(selectedText);
         } catch (e) {
             console.error('Error sending message:', e);
             ttsRequestInProgress = false;
@@ -289,4 +300,72 @@ function isEditableElement(element) {
     }
 
     return false;
+}
+
+async function saveNoteInBackground(text) {
+    try {
+        const response = await chrome.runtime.sendMessage({
+            action: 'saveNote',
+            noteData: {
+                content: text,
+                source_url: window.location.href,
+                source_title: document.title
+            }
+        });
+
+        if (response.success) {
+            showNotification('Note saved!');
+        } else if (response.error === 'NOT_AUTHENTICATED') {
+            showAuthPrompt();
+        }
+    } catch (error) {
+        console.error('Failed to save note:', error);
+    }
+}
+
+async function saveSelectedNote() {
+    if (!selectedText) {
+        const selection = window.getSelection();
+        selectedText = selection.toString().trim();
+    }
+
+    if (selectedText) {
+        await saveNoteInBackground(selectedText);
+        hideTooltip();
+    }
+}
+
+function showNotification(message) {
+    const notification = document.createElement('div');
+    notification.className = 'tts-notification';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.remove();
+    }, 3000);
+}
+
+// Show auth prompt
+function showAuthPrompt() {
+    const prompt = document.createElement('div');
+    prompt.className = 'tts-auth-prompt';
+    prompt.innerHTML = `
+    <div class="tts-auth-content">
+      <p>Please login to save notes</p>
+      <button id="tts-login-btn">Login</button>
+      <button id="tts-close-btn">Close</button>
+    </div>
+  `;
+
+    document.body.appendChild(prompt);
+
+    document.getElementById('tts-login-btn').addEventListener('click', () => {
+        chrome.runtime.sendMessage({ action: 'openPopup' });
+        prompt.remove();
+    });
+
+    document.getElementById('tts-close-btn').addEventListener('click', () => {
+        prompt.remove();
+    });
 }

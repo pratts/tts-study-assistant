@@ -1,7 +1,7 @@
 // AuthManager for Chrome Extension
-class AuthManager {
+export class AuthManager {
     constructor() {
-        this.API_URL = 'http://localhost:3000/api'; // Update for production
+        this.API_URL = 'http://localhost:3000/api/v1'; // Update for production
         this.ACCESS_KEY = 'access_token';
         this.REFRESH_KEY = 'refresh_token';
         this.USER_KEY = 'user';
