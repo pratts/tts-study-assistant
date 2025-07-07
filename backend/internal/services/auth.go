@@ -26,6 +26,7 @@ type RegisterRequest struct {
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required"` // Pre-hashed password from UI
+	Source   string `json:"source"`
 }
 
 type AuthResponse struct {
@@ -40,6 +41,13 @@ type AuthResponse struct {
 
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
+}
+
+// Claims struct for JWT parsing
+type Claims struct {
+	UserID string `json:"user_id"`
+	Email  string `json:"email"`
+	jwt.RegisteredClaims
 }
 
 func NewAuthService(cfg *config.Config) *AuthService {
@@ -104,13 +112,18 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, errors.New("invalid credentials")
 	}
 
+	source := req.Source
+	if source == "" {
+		source = "web"
+	}
+
 	// Generate tokens
-	accessToken, err := s.generateAccessToken(user.ID.String(), user.Email)
+	accessToken, err := s.generateAccessTokenWithSource(user.ID.String(), user.Email, source)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := s.generateRefreshToken(user.ID.String())
+	refreshToken, err := s.generateRefreshTokenWithSource(user.ID.String(), source, "")
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +142,10 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 func (s *AuthService) Refresh(req *RefreshRequest) (*AuthResponse, error) {
 	// Find refresh token
 	var refreshToken models.RefreshToken
-	if err := s.db.Where("token = ? AND expires_at > ?", req.RefreshToken, time.Now()).First(&refreshToken).Error; err != nil {
+	if err := s.db.Where("token = ?", req.RefreshToken).First(&refreshToken).Error; err != nil {
+		return nil, errors.New("invalid refresh token")
+	}
+	if refreshToken.ExpiresAt.Before(time.Now()) {
 		return nil, errors.New("invalid refresh token")
 	}
 
@@ -139,19 +155,21 @@ func (s *AuthService) Refresh(req *RefreshRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	// Generate new tokens
-	accessToken, err := s.generateAccessToken(user.ID.String(), user.Email)
-	if err != nil {
-		return nil, err
-	}
+	// Update LastUsedAt
+	now := time.Now()
+	s.db.Model(&refreshToken).Update("last_used_at", &now)
 
-	newRefreshToken, err := s.generateRefreshToken(user.ID.String())
-	if err != nil {
-		return nil, err
-	}
-
-	// Delete old refresh token
+	// Token rotation: delete old, create new with same source/device
 	s.db.Delete(&refreshToken)
+
+	accessToken, err := s.generateAccessTokenWithSource(user.ID.String(), user.Email, refreshToken.Source)
+	if err != nil {
+		return nil, err
+	}
+	newRefreshToken, err := s.generateRefreshTokenWithSource(user.ID.String(), refreshToken.Source, refreshToken.DeviceInfo)
+	if err != nil {
+		return nil, err
+	}
 
 	response := &AuthResponse{
 		AccessToken:  accessToken,
@@ -165,8 +183,9 @@ func (s *AuthService) Refresh(req *RefreshRequest) (*AuthResponse, error) {
 }
 
 func (s *AuthService) Logout(refreshToken string) error {
-	// Delete refresh token
-	return s.db.Where("token = ?", refreshToken).Delete(&models.RefreshToken{}).Error
+	// Delete refresh token (idempotent)
+	s.db.Where("token = ?", refreshToken).Delete(&models.RefreshToken{})
+	return nil
 }
 
 func (s *AuthService) generateAccessToken(userID, email string) (string, error) {
@@ -197,4 +216,82 @@ func (s *AuthService) generateRefreshToken(userID string) (string, error) {
 	}
 
 	return refreshToken, nil
+}
+
+// Helper: generate access token with source-based expiry
+func (s *AuthService) generateAccessTokenWithSource(userID, email, source string) (string, error) {
+	var exp time.Duration
+	switch source {
+	case "extension":
+		exp = time.Hour * 1
+	default:
+		exp = time.Minute * 15
+	}
+	claims := jwt.MapClaims{
+		"user_id": userID,
+		"email":   email,
+		"exp":     time.Now().Add(exp).Unix(),
+		"iat":     time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(s.cfg.JWTSecret))
+}
+
+// Helper: generate refresh token with source-based expiry and device info
+func (s *AuthService) generateRefreshTokenWithSource(userID, source, deviceInfo string) (string, error) {
+	refreshToken := uuid.New().String()
+	var exp time.Duration
+	switch source {
+	case "extension":
+		exp = time.Hour * 24 * 90 // 90 days
+	default:
+		exp = time.Hour * 24 * 30 // 30 days
+	}
+	refreshTokenModel := models.RefreshToken{
+		Token:      refreshToken,
+		UserID:     uuid.MustParse(userID),
+		ExpiresAt:  time.Now().Add(exp),
+		Source:     source,
+		DeviceInfo: deviceInfo,
+	}
+	if err := s.db.Create(&refreshTokenModel).Error; err != nil {
+		return "", err
+	}
+	return refreshToken, nil
+}
+
+// GenerateAccessTokenForSource is a public wrapper for generateAccessTokenWithSource
+func (s *AuthService) GenerateAccessTokenForSource(userID, email, source string) (string, error) {
+	return s.generateAccessTokenWithSource(userID, email, source)
+}
+
+// GenerateRefreshTokenForSource is a public wrapper for generateRefreshTokenWithSource
+func (s *AuthService) GenerateRefreshTokenForSource(userID, source, deviceInfo string) (string, error) {
+	return s.generateRefreshTokenWithSource(userID, source, deviceInfo)
+}
+
+// ParseToken parses a JWT and returns claims
+func (s *AuthService) ParseToken(tokenString string) (*Claims, error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return []byte(s.cfg.JWTSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, err
+	}
+	return claims, nil
+}
+
+// GetUserByID fetches a user by ID
+func (s *AuthService) GetUserByID(userID string) (*models.User, error) {
+	var user models.User
+	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// CleanupExpiredRefreshTokens deletes all expired refresh tokens from the database
+func (s *AuthService) CleanupExpiredRefreshTokens() error {
+	return s.db.Where("expires_at < ?", time.Now()).Delete(&models.RefreshToken{}).Error
 }

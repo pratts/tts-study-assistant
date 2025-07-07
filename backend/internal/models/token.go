@@ -14,6 +14,11 @@ type RefreshToken struct {
 	ExpiresAt time.Time `gorm:"not null"`
 	CreatedAt time.Time
 
+	// New fields for source, last used, and device info
+	Source     string `gorm:"default:'web'"`
+	LastUsedAt *time.Time
+	DeviceInfo string
+
 	User User `gorm:"foreignKey:UserID"`
 }
 

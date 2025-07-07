@@ -39,3 +39,8 @@ func SendSuccess(c *fiber.Ctx, message string, data ...interface{}) error {
 
 	return c.Status(fiber.StatusOK).JSON(response)
 }
+
+// Add SendErrorWithCode for compatibility
+func SendErrorWithCode(c *fiber.Ctx, status int, message string, code string) error {
+	return SendError(c, status, message, code)
+}

@@ -19,12 +19,12 @@ func AuthMiddleware(cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
-			return utils.SendError(c, fiber.StatusUnauthorized, "Authorization header required")
+			return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "Authorization header required", "TOKEN_EXPIRED")
 		}
 
 		// Check if the header starts with "Bearer "
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			return utils.SendError(c, fiber.StatusUnauthorized, "Invalid authorization header format")
+			return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "Invalid authorization header format", "TOKEN_EXPIRED")
 		}
 
 		// Extract the token
@@ -35,14 +35,20 @@ func AuthMiddleware(cfg *config.Config) fiber.Handler {
 			return []byte(cfg.JWTSecret), nil
 		})
 
-		if err != nil || !token.Valid {
-			return utils.SendError(c, fiber.StatusUnauthorized, "Invalid or expired token")
+		if err != nil {
+			if strings.Contains(err.Error(), "token is expired") {
+				return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "Token expired", "TOKEN_EXPIRED")
+			}
+			return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "Invalid or expired token", "TOKEN_EXPIRED")
+		}
+		if !token.Valid {
+			return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "Invalid or expired token", "TOKEN_EXPIRED")
 		}
 
 		// Extract claims
 		claims, ok := token.Claims.(*Claims)
 		if !ok {
-			return utils.SendError(c, fiber.StatusUnauthorized, "Invalid token claims")
+			return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "Invalid token claims", "TOKEN_EXPIRED")
 		}
 
 		// Set user info in context

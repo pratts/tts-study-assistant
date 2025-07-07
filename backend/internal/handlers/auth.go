@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/pratts/tts-study-assistant/backend/internal/config"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
@@ -107,4 +109,58 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	}
 
 	return utils.SendSuccess(c, "Logout successful")
+}
+
+// Verify handles token verification
+func (h *AuthHandler) Verify(c *fiber.Ctx) error {
+	// Get Authorization header
+	tokenString := c.Get("Authorization")
+	if tokenString == "" || !strings.HasPrefix(tokenString, "Bearer ") {
+		return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "Missing or invalid token", "TOKEN_EXPIRED")
+	}
+	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
+
+	claims, err := h.authService.ParseToken(tokenString)
+	if err != nil {
+		return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "Token expired or invalid", "TOKEN_EXPIRED")
+	}
+	user, err := h.authService.GetUserByID(claims.UserID)
+	if err != nil {
+		return utils.SendError(c, fiber.StatusUnauthorized, "User not found")
+	}
+	return c.JSON(fiber.Map{
+		"id":    user.ID.String(),
+		"email": user.Email,
+		"name":  user.Name,
+	})
+}
+
+// ExtensionSync handles extension token generation if user has valid web session
+func (h *AuthHandler) ExtensionSync(c *fiber.Ctx) error {
+	userID := c.Locals("user_id")
+	if userID == nil {
+		return utils.SendErrorWithCode(c, fiber.StatusUnauthorized, "No valid web session", "TOKEN_EXPIRED")
+	}
+	user, err := h.authService.GetUserByID(userID.(string))
+	if err != nil {
+		return utils.SendError(c, fiber.StatusUnauthorized, "User not found")
+	}
+	// Generate extension tokens
+	accessToken, err := h.authService.GenerateAccessTokenForSource(user.ID.String(), user.Email, "extension")
+	if err != nil {
+		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to generate access token")
+	}
+	refreshToken, err := h.authService.GenerateRefreshTokenForSource(user.ID.String(), "extension", "")
+	if err != nil {
+		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to generate refresh token")
+	}
+	return utils.SendSuccess(c, "Extension tokens generated", fiber.Map{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"user": fiber.Map{
+			"id":    user.ID.String(),
+			"email": user.Email,
+			"name":  user.Name,
+		},
+	})
 }
