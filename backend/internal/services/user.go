@@ -32,7 +32,7 @@ func NewUserService() *UserService {
 
 func (s *UserService) GetProfile(userID string) (*UserProfileResponse, error) {
 	var user models.User
-	if err := s.db.First(&user, userID).Error; err != nil {
+	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("user not found")
 		}
@@ -50,7 +50,7 @@ func (s *UserService) GetProfile(userID string) (*UserProfileResponse, error) {
 
 func (s *UserService) UpdateProfile(userID string, req *UpdateProfileRequest) (*UserProfileResponse, error) {
 	var user models.User
-	if err := s.db.First(&user, userID).Error; err != nil {
+	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("user not found")
 		}
