@@ -7,8 +7,34 @@ body {
     /* This gray background was missing! */
 }
 
+.popup-header {
+    background: linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%);
+    color: #fff;
+    padding: 18px 0 12px 0;
+    text-align: center;
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.08);
+}
+
+.popup-footer {
+    background: #f3f4f6;
+    padding: 10px 0 8px 0;
+    text-align: center;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    box-shadow: 0 -2px 8px rgba(31,41,55,0.04);
+}
+
 .container {
+    background: #fff;
+    border-radius: 0 0 0 0;
+    box-shadow: 0 4px 24px rgba(31,41,55,0.10);
     padding: 16px;
+    margin: 0;
 }
 
 h1 {
@@ -240,7 +266,7 @@ kbd {
     min-width: 260px;
     max-width: 90vw;
     width: 320px;
-    max-height: 90vh;
+    max-height: 80vh;
     overflow-y: auto;
     position: relative;
     animation: slideUp 0.3s cubic-bezier(.4,1.4,.6,1) both;
@@ -322,10 +348,9 @@ kbd {
 }
 
 .auth-links {
-    text-align: center;
-    margin-top: 12px;
     font-size: 13px;
     color: #6b7280;
+    margin: 0;
 }
 .auth-link {
     color: #2563eb;
@@ -349,5 +374,6 @@ kbd {
         width: 96vw;
         min-width: 0;
         padding: 18px 6vw 18px 6vw;
+        max-height: 80vh;
     }
 }

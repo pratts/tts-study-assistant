@@ -82,8 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         const hashed = await sha256(password);
-        // Demo: Show alert with hashed password
-        alert(`Login\nEmail: ${email}\nSHA-256: ${hashed}`);
+        // Demo: No alert, just update UI
         authState.loggedIn = true;
         authState.username = email.split('@')[0];
         hideModal('login-modal-overlay');
@@ -100,8 +99,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         const hashed = await sha256(password);
-        // Demo: Show alert with hashed password
-        alert(`Signup\nName: ${name}\nEmail: ${email}\nSHA-256: ${hashed}`);
+        // Demo: No alert, just update UI
         authState.loggedIn = true;
         authState.username = name;
         hideModal('signup-modal-overlay');
