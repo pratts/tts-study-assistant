@@ -229,15 +229,11 @@ input[type="range"] {
 .modal-box {
     background: #fff;
     border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(31,41,55,0.18);
-    padding: 32px 24px 24px 24px;
-    min-width: 260px;
-    max-width: 95vw;
-    width: 340px;
-    max-height: 80vh;
-    overflow-y: auto;
-    position: relative;
-    animation: slideUp 0.3s cubic-bezier(.4,1.4,.6,1) both;
+    box-shadow: 0 8px 32px rgba(76, 81, 255, 0.18);
+    padding: 28px 22px 22px 22px;
+    max-width: 320px;
+    width: 100%;
+    margin: 0 auto;
 }
 @keyframes slideUp {
     from { transform: translateY(60px) scale(0.98); opacity: 0; }

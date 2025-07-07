@@ -19,7 +19,18 @@ function updateAuthHeader() {
     if (!header) return;
     if (authState.loggedIn) {
         header.innerHTML = `<span class="welcome-msg">Welcome, <b>${authState.username}</b></span> <button class="header-btn" id="logout-btn">Logout</button>`;
-        document.getElementById('logout-btn').onclick = () => {
+        document.getElementById('logout-btn').onclick = async () => {
+            // Call logout API
+            const auth = await getAuth();
+            if (auth.refresh_token) {
+                try {
+                    await apiRequest('/auth/logout', {
+                        method: 'POST',
+                        body: { refresh_token: auth.refresh_token }
+                    });
+                } catch { }
+            }
+            await clearAuth();
             authState.loggedIn = false;
             authState.username = null;
             updateAuthHeader();
@@ -34,6 +45,40 @@ function updateAuthHeader() {
 async function sha256(str) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
     return Array.from(new Uint8Array(buf)).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+// === AUTH API INTEGRATION ===
+const API_BASE = 'http://localhost:3000/api/v1'; // Change to your backend base URL
+
+async function apiRequest(path, { method = 'GET', body, token } = {}) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw await res.json();
+    return await res.json();
+}
+
+async function saveAuth(auth) {
+    await chrome.storage.local.set({
+        access_token: auth.access_token,
+        refresh_token: auth.refresh_token,
+        user: auth.user
+    });
+}
+async function clearAuth() {
+    await chrome.storage.local.remove(['access_token', 'refresh_token', 'user']);
+}
+async function getAuth() {
+    const data = await chrome.storage.local.get(['access_token', 'refresh_token', 'user']);
+    return data;
+}
+
+async function fetchProfile(token) {
+    return apiRequest('/user/profile', { token });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -80,11 +125,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         const hashed = await sha256(password);
-        // Demo: No alert, just update UI
-        authState.loggedIn = true;
-        authState.username = email.split('@')[0];
-        hideModal('login-modal-overlay');
-        updateAuthHeader();
+        try {
+            const resp = await apiRequest('/auth/login', {
+                method: 'POST',
+                body: { email, password: hashed }
+            });
+            await saveAuth(resp.data);
+            authState.loggedIn = true;
+            authState.username = resp.data.user.name || resp.data.user.email;
+            hideModal('login-modal-overlay');
+            updateAuthHeader();
+        } catch (err) {
+            alert(err.message || 'Login failed');
+        }
     };
     // Signup form
     document.getElementById('signup-form').onsubmit = async (e) => {
@@ -97,13 +150,34 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         const hashed = await sha256(password);
-        // Demo: No alert, just update UI
-        authState.loggedIn = true;
-        authState.username = name;
-        hideModal('signup-modal-overlay');
-        updateAuthHeader();
+        try {
+            const resp = await apiRequest('/auth/register', {
+                method: 'POST',
+                body: { name, email, password: hashed }
+            });
+            await saveAuth(resp.data);
+            authState.loggedIn = true;
+            authState.username = resp.data.user.name || resp.data.user.email;
+            hideModal('signup-modal-overlay');
+            updateAuthHeader();
+        } catch (err) {
+            alert(err.message || 'Signup failed');
+        }
     };
 
+    // On load, check for token and fetch profile
+    const auth = await getAuth();
+    if (auth.access_token) {
+        try {
+            const profile = await fetchProfile(auth.access_token);
+            authState.loggedIn = true;
+            authState.username = profile.name || profile.email;
+        } catch {
+            await clearAuth();
+            authState.loggedIn = false;
+            authState.username = null;
+        }
+    }
     updateAuthHeader();
 
     // === TTS DEMO FUNCTIONALITY ===
