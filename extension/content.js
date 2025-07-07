@@ -249,11 +249,11 @@ async function speakSelectedText() {
                 // Hide tooltip after speaking starts
                 hideTooltip();
             }
+            await saveNoteInBackground(selectedText);
+
             // Clear selectedText to avoid repeat
             selectedText = '';
             setTimeout(() => { ttsRequestInProgress = false; }, 1000);
-
-            await saveNoteInBackground(selectedText);
         } catch (e) {
             console.error('Error sending message:', e);
             ttsRequestInProgress = false;

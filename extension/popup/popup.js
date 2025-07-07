@@ -81,9 +81,8 @@ async function fetchProfile(token) {
     return apiRequest('/user/profile', { token });
 }
 
-async function fetchNotes(token) {
-    return apiRequest('/notes', { token });
-}
+import { ApiClient } from '../js/api-client.js';
+const apiClient = new ApiClient();
 
 document.addEventListener('DOMContentLoaded', async () => {
     // Get current settings and state
@@ -434,34 +433,42 @@ async function updateSetting(key, value) {
 
 async function loadRecentNotes() {
     try {
-        const auth = await getAuth();
-        if (!auth.access_token) {
+        const isAuthenticated = await ApiClient.isAuthenticated();
+        if (!isAuthenticated) {
             await clearAuth();
             authState.loggedIn = false;
             authState.username = null;
         }
-        console.log('fetching notes: ', auth);
-        const notes = await fetchNotes(auth.access_token);
-        console.log('notes: ', notes);
-        const recentNotes = notes.data.slice(0, 5); // Show last 5 notes
-
+        const notes = await apiClient.getNotes();
+        const recentNotes = notes.slice(0, 5); // Show last 5 notes
         const notesListEl = document.getElementById('notes-list');
         notesListEl.innerHTML = '';
-
         if (recentNotes.length === 0) {
             notesListEl.innerHTML = '<p class="no-notes">No notes yet. Select text on any page and save!</p>';
             return;
         }
-
         recentNotes.forEach(note => {
             const noteEl = document.createElement('div');
             noteEl.className = 'note-item';
             noteEl.innerHTML = `
-          <p class="note-content">${truncateText(note.content, 100)}</p>
-          <p class="note-source">${note.source_title || 'Untitled'}</p>
-          <p class="note-date">${formatDate(note.created_at)}</p>
-        `;
+              <p class="note-content">${truncateText(note.content, 100)}</p>
+              <p class="note-source">${note.source_title || 'Untitled'}</p>
+              <p class="note-date">${formatDate(note.created_at)}</p>
+              <button class="delete-note-btn" data-id="${note.id}">Delete</button>
+            `;
             notesListEl.appendChild(noteEl);
+        });
+        // Add delete handlers
+        document.querySelectorAll('.delete-note-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const noteId = e.target.getAttribute('data-id');
+                try {
+                    await apiClient.deleteNote(noteId);
+                    loadRecentNotes();
+                } catch (err) {
+                    alert('Failed to delete note');
+                }
+            });
         });
     } catch (error) {
         console.error('Failed to load notes:', error);

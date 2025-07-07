@@ -5,7 +5,7 @@ import { AuthManager } from './js/auth-manager.js';
 import { ApiClient } from './js/api-client.js';
 
 const authManager = new AuthManager();
-const apiClient = new ApiClient(authManager);
+const apiClient = new ApiClient();
 
 // State management
 let ttsState = {
@@ -272,19 +272,15 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 async function handleSaveNote(noteData, sendResponse) {
     try {
         // Check if user is authenticated
-        const isAuthenticated = await authManager.checkSession();
-
+        const isAuthenticated = await ApiClient.isAuthenticated();
         if (!isAuthenticated) {
             sendResponse({ success: false, error: 'NOT_AUTHENTICATED' });
             return;
         }
-
         // Save the note
         const response = await apiClient.createNote(noteData);
-
         // Update badge with note count
         updateNoteBadge();
-
         sendResponse({ success: true, note: response });
     } catch (error) {
         console.error('Failed to save note:', error);
@@ -295,9 +291,10 @@ async function handleSaveNote(noteData, sendResponse) {
 // Update badge to show note count
 async function updateNoteBadge() {
     try {
+        const isAuthenticated = await ApiClient.isAuthenticated();
+        if (!isAuthenticated) return;
         const notes = await apiClient.getNotes();
         const count = notes.length;
-
         chrome.action.setBadgeText({
             text: count > 0 ? count.toString() : ''
         });
@@ -316,26 +313,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             source_url: tab.url,
             source_title: tab.title
         };
-
         try {
-            const isAuthenticated = await authManager.checkSession();
-
+            const isAuthenticated = await ApiClient.isAuthenticated();
             if (!isAuthenticated) {
-                // Open popup for login
                 chrome.action.openPopup();
                 return;
             }
-
             await apiClient.createNote(noteData);
-
-            // Show notification
             chrome.notifications.create({
                 type: 'basic',
                 iconUrl: 'icons/icon-48.png',
                 title: 'Note Saved!',
                 message: 'Selected text has been saved to your notes.'
             });
-
             updateNoteBadge();
         } catch (error) {
             console.error('Failed to save note:', error);

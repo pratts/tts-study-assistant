@@ -2,7 +2,15 @@
 
 export class ApiClient {
     constructor() {
-        this.API_URL = 'http://localhost:3000/api'; // Update for production
+        this.API_URL = 'http://localhost:3000/api/v1'; // Update for production
+    }
+
+    static async isAuthenticated() {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(['access_token'], (result) => {
+                resolve(!!result['access_token']);
+            });
+        });
     }
 
     async _getAccessToken() {
