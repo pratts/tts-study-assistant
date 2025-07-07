@@ -100,7 +100,7 @@ async function handleSpeakRequest(text, options = {}, sendResponse) {
 
     // Otherwise, start speaking immediately
     ttsState.currentText = text;
-    ttsState.queue = [text];
+    ttsState.queue = [];
     await speak(text, options);
     sendResponse({ status: 'speaking' });
 }

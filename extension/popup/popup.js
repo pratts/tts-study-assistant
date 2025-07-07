@@ -14,20 +14,20 @@ function hideModal(overlayId) {
     document.getElementById(overlayId).classList.remove('active');
 }
 
-function updateAuthLinks() {
-    const links = document.querySelector('.auth-links');
+function updateAuthHeader() {
+    const header = document.getElementById('auth-header');
+    if (!header) return;
     if (authState.loggedIn) {
-        links.innerHTML = `<span class="welcome-msg">Welcome, <b>${authState.username}</b></span> <a href="#" class="auth-link" id="logout-link">Logout</a>`;
-        document.getElementById('logout-link').onclick = (e) => {
-            e.preventDefault();
+        header.innerHTML = `<span class="welcome-msg">Welcome, <b>${authState.username}</b></span> <button class="header-btn" id="logout-btn">Logout</button>`;
+        document.getElementById('logout-btn').onclick = () => {
             authState.loggedIn = false;
             authState.username = null;
-            updateAuthLinks();
+            updateAuthHeader();
         };
     } else {
-        links.innerHTML = `<a href="#" id="login-link" class="auth-link">Login</a><span class="auth-sep">|</span><a href="#" id="signup-link" class="auth-link">Sign Up</a>`;
-        document.getElementById('login-link').onclick = (e) => { e.preventDefault(); showModal('login-modal-overlay'); };
-        document.getElementById('signup-link').onclick = (e) => { e.preventDefault(); showModal('signup-modal-overlay'); };
+        header.innerHTML = `<button class="header-btn" id="login-btn">Login</button> <button class="header-btn" id="signup-btn">Sign Up</button>`;
+        document.getElementById('login-btn').onclick = () => showModal('login-modal-overlay');
+        document.getElementById('signup-btn').onclick = () => showModal('signup-modal-overlay');
     }
 }
 
@@ -47,7 +47,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Initialize UI
     updateUI(settings);
-    updatePlaybackUI(currentState);
 
     // Setup event listeners
     setupEventListeners();
@@ -56,7 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.runtime.onMessage.addListener((request) => {
         if (request.action === 'stateUpdate') {
             currentState = request.state;
-            updatePlaybackUI(currentState);
         }
     });
 
@@ -86,7 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         authState.loggedIn = true;
         authState.username = email.split('@')[0];
         hideModal('login-modal-overlay');
-        updateAuthLinks();
+        updateAuthHeader();
     };
     // Signup form
     document.getElementById('signup-form').onsubmit = async (e) => {
@@ -103,70 +101,224 @@ document.addEventListener('DOMContentLoaded', async () => {
         authState.loggedIn = true;
         authState.username = name;
         hideModal('signup-modal-overlay');
-        updateAuthLinks();
+        updateAuthHeader();
     };
 
-    updateAuthLinks();
+    updateAuthHeader();
+
+    // === TTS DEMO FUNCTIONALITY ===
+    let synth = window.speechSynthesis;
+    let utterance = null;
+    let ttsEnabled = true;
+    let paused = false;
+
+    // Sliders
+    const volumeSlider = document.getElementById('volume-slider');
+    const pitchSlider = document.getElementById('pitch-slider');
+    const rateSlider = document.getElementById('rate-slider');
+    const volumeValue = document.getElementById('volume-value');
+    const pitchValue = document.getElementById('pitch-value');
+    const rateValue = document.getElementById('rate-value');
+
+    function updateSliderDisplays() {
+        if (volumeValue) volumeValue.textContent = Math.round(volumeSlider.value * 100) + '%';
+        if (pitchValue) pitchValue.textContent = parseFloat(pitchSlider.value).toFixed(2);
+        if (rateValue) rateValue.textContent = parseFloat(rateSlider.value).toFixed(2) + 'x';
+    }
+    if (volumeSlider) volumeSlider.oninput = updateSliderDisplays;
+    if (pitchSlider) pitchSlider.oninput = updateSliderDisplays;
+    if (rateSlider) rateSlider.oninput = updateSliderDisplays;
+    updateSliderDisplays();
+
+    // Button grid logic
+    const ttsControls = document.getElementById('tts-controls');
+    const pauseBtn = document.getElementById('pause-btn');
+    const resumeBtn = document.getElementById('resume-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const playBtn = document.getElementById('play-btn');
+    const clearBtn = document.getElementById('clear-btn');
+
+    let isPlaying = false;
+    let isPaused = false;
+    let demoUtterance = null;
+
+    function updateButtonStates() {
+        if (!currentState) return;
+        ttsControls.style.display = '';
+        // Play button: enable only if there is something in the queue or a current text
+        const canPlay = (currentState.queue && currentState.queue.length > 0) || currentState.currentText;
+        if (currentState.isPlaying && !currentState.isPaused) {
+            playBtn.textContent = 'Pause';
+            playBtn.disabled = false;
+            pauseBtn.style.display = 'none';
+            resumeBtn.style.display = 'none';
+        } else {
+            playBtn.textContent = 'Play';
+            playBtn.disabled = !canPlay;
+            pauseBtn.style.display = 'none';
+            resumeBtn.style.display = 'none';
+        }
+        // Enable clear queue if there are items in the queue
+        if (currentState.queue && currentState.queue.length > 0) {
+            clearBtn.disabled = false;
+        } else {
+            clearBtn.disabled = true;
+        }
+        // Stop button always visible if playing or paused
+        if (currentState.isPlaying || currentState.isPaused) {
+            stopBtn.style.display = '';
+        } else {
+            stopBtn.style.display = 'none';
+        }
+    }
+
+    function updateStatusDot() {
+        const statusDot = document.querySelector('.status-dot');
+        const statusText = document.getElementById('status-text');
+        if (!ttsEnabled) {
+            statusDot.classList.add('disabled');
+            statusText.classList.add('disabled');
+        } else {
+            statusDot.classList.remove('disabled');
+            statusText.classList.remove('disabled');
+        }
+    }
+
+    // Demo TTS (for popup only, not content script)
+    function playDemoTTS() {
+        if (!ttsEnabled) return;
+        if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+        demoUtterance = new SpeechSynthesisUtterance('This is a demo of the Study Assistant TTS.');
+        demoUtterance.volume = parseFloat(volumeSlider.value);
+        demoUtterance.pitch = parseFloat(pitchSlider.value);
+        demoUtterance.rate = parseFloat(rateSlider.value);
+        demoUtterance.onstart = () => {
+            isPlaying = true;
+            isPaused = false;
+            updateButtonStates();
+        };
+        demoUtterance.onpause = () => {
+            isPaused = true;
+            isPlaying = false;
+            updateButtonStates();
+        };
+        demoUtterance.onresume = () => {
+            isPaused = false;
+            isPlaying = true;
+            updateButtonStates();
+        };
+        demoUtterance.onend = () => {
+            isPlaying = false;
+            isPaused = false;
+            updateButtonStates();
+        };
+        window.speechSynthesis.speak(demoUtterance);
+    }
+
+    pauseBtn.onclick = () => {
+        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+            window.speechSynthesis.pause();
+        }
+    };
+    resumeBtn.onclick = () => {
+        if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+        }
+    };
+    stopBtn.onclick = () => {
+        if (window.speechSynthesis.speaking || window.speechSynthesis.paused) {
+            window.speechSynthesis.cancel();
+        }
+    };
+
+    // Remove all speechSynthesis event listeners and polling
+    // Instead, listen for stateUpdate messages from background
+    chrome.runtime.onMessage.addListener((request) => {
+        if (request.action === 'stateUpdate') {
+            currentState = request.state;
+            updateButtonStates();
+        }
+    });
+
+    // Initial state
+    updateButtonStates();
+    updateStatusDot();
+
+    document.getElementById('toggle-btn').onclick = () => {
+        ttsEnabled = !ttsEnabled;
+        const statusText = document.getElementById('status-text');
+        if (statusText) {
+            statusText.textContent = ttsEnabled ? 'Active' : 'Disabled';
+        }
+        document.getElementById('toggle-btn').textContent = ttsEnabled ? 'Disable TTS' : 'Enable TTS';
+        updateStatusDot();
+    };
+
+    // Optionally, you can trigger playDemoTTS() from a button or event for demo.
+    // playDemoTTS();
+
+    playBtn.onclick = async () => {
+        if (!currentState) return;
+        if (currentState.isPlaying && !currentState.isPaused) {
+            // Pause
+            await chrome.runtime.sendMessage({ action: 'pause' });
+        } else if (currentState.isPaused) {
+            // Resume
+            await chrome.runtime.sendMessage({ action: 'resume' });
+        } else {
+            // Play (resume or play current text)
+            if (currentState.currentText) {
+                await chrome.runtime.sendMessage({ action: 'speak', text: currentState.currentText });
+            }
+        }
+    };
+    stopBtn.onclick = async () => {
+        await chrome.runtime.sendMessage({ action: 'stop' });
+    };
+    clearBtn.onclick = async () => {
+        // Clear the queue and stop playback
+        await chrome.runtime.sendMessage({ action: 'stop' });
+    };
 });
 
 function updateUI(settings) {
     // Update sliders
-    document.getElementById('rate-slider').value = settings.rate || 1.0;
-    document.getElementById('pitch-slider').value = settings.pitch || 1.0;
-    document.getElementById('volume-slider').value = settings.volume || 1.0;
+    const rateSlider = document.getElementById('rate-slider');
+    const pitchSlider = document.getElementById('pitch-slider');
+    const volumeSlider = document.getElementById('volume-slider');
+    if (rateSlider) rateSlider.value = settings.rate || 1.0;
+    if (pitchSlider) pitchSlider.value = settings.pitch || 1.0;
+    if (volumeSlider) volumeSlider.value = settings.volume || 1.0;
 
     // Update value displays
-    document.getElementById('rate-value').textContent = `${settings.rate || 1.0}x`;
-    document.getElementById('pitch-value').textContent = settings.pitch || 1.0;
-    document.getElementById('volume-value').textContent = `${Math.round((settings.volume || 1.0) * 100)}%`;
+    const rateValue = document.getElementById('rate-value');
+    const pitchValue = document.getElementById('pitch-value');
+    const volumeValue = document.getElementById('volume-value');
+    if (rateValue) rateValue.textContent = `${settings.rate || 1.0}x`;
+    if (pitchValue) pitchValue.textContent = settings.pitch || 1.0;
+    if (volumeValue) volumeValue.textContent = `${Math.round((settings.volume || 1.0) * 100)}%`;
 
     // Update status
     const statusText = document.getElementById('status-text');
-    const toggleButton = document.getElementById('toggle-button');
-
-    if (settings.enabled !== false) {
-        statusText.textContent = 'Active';
-        statusText.className = 'status-active';
-        toggleButton.textContent = 'Disable';
-        toggleButton.className = 'btn btn-primary';
-    } else {
-        statusText.textContent = 'Disabled';
-        statusText.className = 'status-inactive';
-        toggleButton.textContent = 'Enable';
-        toggleButton.className = 'btn btn-secondary';
+    const toggleButton = document.getElementById('toggle-btn');
+    if (!statusText) {
+        console.warn("Element with id 'status-text' not found in DOM.");
     }
-}
-
-function updatePlaybackUI(state) {
-    const playbackStatus = document.getElementById('playback-status');
-    const playbackState = document.getElementById('playback-state');
-    const playPauseButton = document.getElementById('play-pause-button');
-    const queueInfo = document.getElementById('queue-info');
-    const queueCount = document.getElementById('queue-count');
-
-    if (state.isPlaying || state.isPaused) {
-        playbackStatus.classList.remove('hidden');
-        playPauseButton.classList.remove('hidden');
-
-        if (state.isPlaying) {
-            playbackState.textContent = 'Playing...';
-            playPauseButton.textContent = 'Pause';
-            playPauseButton.onclick = () => pauseSpeaking();
-        } else if (state.isPaused) {
-            playbackState.textContent = 'Paused';
-            playPauseButton.textContent = 'Resume';
-            playPauseButton.onclick = () => resumeSpeaking();
-        }
-
-        if (state.queue.length > 0) {
-            queueInfo.classList.remove('hidden');
-            queueCount.textContent = state.queue.length;
+    if (!toggleButton) {
+        console.warn("Element with id 'toggle-btn' not found in DOM.");
+    }
+    if (statusText && toggleButton) {
+        if (settings.enabled !== false) {
+            statusText.textContent = 'Active';
+            statusText.className = 'status-active';
+            toggleButton.textContent = 'Disable';
+            toggleButton.className = 'btn btn-primary';
         } else {
-            queueInfo.classList.add('hidden');
+            statusText.textContent = 'Disabled';
+            statusText.className = 'status-inactive';
+            toggleButton.textContent = 'Enable';
+            toggleButton.className = 'btn btn-secondary';
         }
-    } else {
-        playbackStatus.classList.add('hidden');
-        playPauseButton.classList.add('hidden');
     }
 }
 
@@ -191,21 +343,6 @@ function setupEventListeners() {
         document.getElementById('volume-value').textContent = `${Math.round(value * 100)}%`;
         await updateSetting('volume', value);
     });
-
-    // Stop button
-    document.getElementById('stop-button').addEventListener('click', () => {
-        chrome.runtime.sendMessage({ action: 'stop' });
-    });
-
-    // Toggle button
-    document.getElementById('toggle-button').addEventListener('click', async () => {
-        const data = await chrome.storage.sync.get(['settings']);
-        const settings = data.settings || {};
-        const newEnabled = !(settings.enabled !== false);
-
-        await updateSetting('enabled', newEnabled);
-        updateUI({ ...settings, enabled: newEnabled });
-    });
 }
 
 async function updateSetting(key, value) {
@@ -214,12 +351,4 @@ async function updateSetting(key, value) {
     settings[key] = value;
 
     await chrome.storage.sync.set({ settings });
-}
-
-function pauseSpeaking() {
-    chrome.runtime.sendMessage({ action: 'pause' });
-}
-
-function resumeSpeaking() {
-    chrome.runtime.sendMessage({ action: 'resume' });
 }

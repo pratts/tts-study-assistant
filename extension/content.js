@@ -210,6 +210,7 @@ function hideQueueDialog() {
 }
 
 // Speak selected text
+let ttsRequestInProgress = false;
 async function speakSelectedText() {
     if (!isEnabled) {
         console.log('TTS is disabled');
@@ -223,13 +224,15 @@ async function speakSelectedText() {
 
     if (selectedText) {
         try {
+            // Prevent double-speaking: only send if not already in progress
+            if (ttsRequestInProgress) return;
+            ttsRequestInProgress = true;
             // Send to background script
             const response = await chrome.runtime.sendMessage({
                 action: 'speak',
                 text: selectedText,
                 options: {}
             });
-
             // Handle queue decision
             if (response.status === 'queue_decision_needed') {
                 showQueueDialog();
@@ -237,8 +240,12 @@ async function speakSelectedText() {
                 // Hide tooltip after speaking starts
                 hideTooltip();
             }
+            // Clear selectedText to avoid repeat
+            selectedText = '';
+            setTimeout(() => { ttsRequestInProgress = false; }, 1000);
         } catch (e) {
             console.error('Error sending message:', e);
+            ttsRequestInProgress = false;
         }
     }
 }
