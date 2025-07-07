@@ -128,7 +128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const resp = await apiRequest('/auth/login', {
                 method: 'POST',
-                body: { email, password: hashed }
+                body: { email, password: hashed, source: 'extension' }
             });
             await saveAuth(resp.data);
             authState.loggedIn = true;
