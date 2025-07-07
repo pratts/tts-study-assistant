@@ -1,6 +1,41 @@
 // Popup script
 let currentState = null;
 
+// === AUTH MODAL LOGIC ===
+let authState = {
+    loggedIn: false,
+    username: null
+};
+
+function showModal(overlayId) {
+    document.getElementById(overlayId).classList.add('active');
+}
+function hideModal(overlayId) {
+    document.getElementById(overlayId).classList.remove('active');
+}
+
+function updateAuthLinks() {
+    const links = document.querySelector('.auth-links');
+    if (authState.loggedIn) {
+        links.innerHTML = `<span class="welcome-msg">Welcome, <b>${authState.username}</b></span> <a href="#" class="auth-link" id="logout-link">Logout</a>`;
+        document.getElementById('logout-link').onclick = (e) => {
+            e.preventDefault();
+            authState.loggedIn = false;
+            authState.username = null;
+            updateAuthLinks();
+        };
+    } else {
+        links.innerHTML = `<a href="#" id="login-link" class="auth-link">Login</a><span class="auth-sep">|</span><a href="#" id="signup-link" class="auth-link">Sign Up</a>`;
+        document.getElementById('login-link').onclick = (e) => { e.preventDefault(); showModal('login-modal-overlay'); };
+        document.getElementById('signup-link').onclick = (e) => { e.preventDefault(); showModal('signup-modal-overlay'); };
+    }
+}
+
+async function sha256(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Get current settings and state
     const data = await chrome.storage.sync.get(['settings']);
@@ -24,6 +59,56 @@ document.addEventListener('DOMContentLoaded', async () => {
             updatePlaybackUI(currentState);
         }
     });
+
+    // Modal open/close
+    document.getElementById('login-close').onclick = () => hideModal('login-modal-overlay');
+    document.getElementById('signup-close').onclick = () => hideModal('signup-modal-overlay');
+
+    // Click outside to close
+    document.getElementById('login-modal-overlay').addEventListener('mousedown', (e) => {
+        if (e.target === e.currentTarget) hideModal('login-modal-overlay');
+    });
+    document.getElementById('signup-modal-overlay').addEventListener('mousedown', (e) => {
+        if (e.target === e.currentTarget) hideModal('signup-modal-overlay');
+    });
+
+    // Login form
+    document.getElementById('login-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        if (!email || !password) {
+            alert('Please enter both email and password.');
+            return;
+        }
+        const hashed = await sha256(password);
+        // Demo: Show alert with hashed password
+        alert(`Login\nEmail: ${email}\nSHA-256: ${hashed}`);
+        authState.loggedIn = true;
+        authState.username = email.split('@')[0];
+        hideModal('login-modal-overlay');
+        updateAuthLinks();
+    };
+    // Signup form
+    document.getElementById('signup-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('signup-name').value.trim();
+        const email = document.getElementById('signup-email').value.trim();
+        const password = document.getElementById('signup-password').value;
+        if (!name || !email || !password) {
+            alert('Please fill all fields.');
+            return;
+        }
+        const hashed = await sha256(password);
+        // Demo: Show alert with hashed password
+        alert(`Signup\nName: ${name}\nEmail: ${email}\nSHA-256: ${hashed}`);
+        authState.loggedIn = true;
+        authState.username = name;
+        hideModal('signup-modal-overlay');
+        updateAuthLinks();
+    };
+
+    updateAuthLinks();
 });
 
 function updateUI(settings) {

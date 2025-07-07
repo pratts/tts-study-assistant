@@ -59,6 +59,53 @@
         <div class="shortcut-info">
             <kbd>Ctrl+Shift+S</kbd> to speak selected text
         </div>
+        <div class="auth-links">
+            <a href="#" id="login-link" class="auth-link">Login</a>
+            <span class="auth-sep">|</span>
+            <a href="#" id="signup-link" class="auth-link">Sign Up</a>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div class="modal-overlay" id="login-modal-overlay">
+        <div class="modal-box" id="login-modal">
+            <button class="modal-close" id="login-close">&times;</button>
+            <h2>Login</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-gradient">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Signup Modal -->
+    <div class="modal-overlay" id="signup-modal-overlay">
+        <div class="modal-box" id="signup-modal">
+            <button class="modal-close" id="signup-close">&times;</button>
+            <h2>Sign Up</h2>
+            <form id="signup-form">
+                <div class="form-group">
+                    <label for="signup-name">Name</label>
+                    <input type="text" id="signup-name" required autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="signup-email">Email</label>
+                    <input type="email" id="signup-email" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="signup-password">Password</label>
+                    <input type="password" id="signup-password" required autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-gradient">Sign Up</button>
+            </form>
+        </div>
     </div>
 
     <script src="popup.js"></script>
