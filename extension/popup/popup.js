@@ -196,6 +196,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     let ttsEnabled = true;
     let paused = false;
 
+    // On load, restore TTS enabled state from storage
+    chrome.storage.sync.get(['tts_enabled'], (data) => {
+        ttsEnabled = data.tts_enabled !== false; // default to true
+        updateTTSControls();
+    });
+
+    function updateTTSControls() {
+        const statusText = document.getElementById('status-text');
+        if (statusText) {
+            statusText.textContent = ttsEnabled ? 'Active' : 'Disabled';
+        }
+        document.getElementById('toggle-btn').textContent = ttsEnabled ? 'Disable TTS' : 'Enable TTS';
+        updateStatusDot();
+        // Disable/enable all TTS controls
+        const controls = document.querySelectorAll('#tts-controls button, #tts-controls input');
+        controls.forEach(el => {
+            el.disabled = !ttsEnabled;
+        });
+    }
+
     // Sliders
     const volumeSlider = document.getElementById('volume-slider');
     const pitchSlider = document.getElementById('pitch-slider');
@@ -330,12 +350,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('toggle-btn').onclick = () => {
         ttsEnabled = !ttsEnabled;
-        const statusText = document.getElementById('status-text');
-        if (statusText) {
-            statusText.textContent = ttsEnabled ? 'Active' : 'Disabled';
+        chrome.storage.sync.set({ tts_enabled: ttsEnabled });
+        updateTTSControls();
+        // If disabling, clear the queue and stop playback
+        if (!ttsEnabled) {
+            chrome.runtime.sendMessage({ action: 'stop' });
         }
-        document.getElementById('toggle-btn').textContent = ttsEnabled ? 'Disable TTS' : 'Enable TTS';
-        updateStatusDot();
     };
 
     // Optionally, you can trigger playDemoTTS() from a button or event for demo.
