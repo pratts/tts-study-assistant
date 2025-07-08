@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, IconButton, Text, Spinner, Alert, AlertIcon } from '@chakra-ui/react';
-import { FaCopy, FaTrash } from 'react-icons/fa';
+import { FaCopy, FaTrash, FaVolumeUp } from 'react-icons/fa';
 import { getNotes, deleteNote } from '../api/apiClient';
 
 function getReadTime(chars: number) {
@@ -54,6 +54,7 @@ export default function Notes() {
                 <Th>Site</Th>
                 <Th>Length</Th>
                 <Th>Read Time</Th>
+                <Th>Listen</Th>
                 <Th>Copy</Th>
                 <Th>Delete</Th>
               </Tr>
@@ -65,6 +66,14 @@ export default function Notes() {
                   <Td>{note.source_title}</Td>
                   <Td>{note.content.length}</Td>
                   <Td>{getReadTime(note.content.length)}</Td>
+                  <Td>
+                    <IconButton
+                      aria-label="Play note"
+                      icon={<FaVolumeUp />}
+                      colorScheme="blue"
+                      onClick={() => window.speechSynthesis.speak(new window.SpeechSynthesisUtterance(note.content))}
+                    />
+                  </Td>
                   <Td>
                     <IconButton
                       aria-label="Copy note"
