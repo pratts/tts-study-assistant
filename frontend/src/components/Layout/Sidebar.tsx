@@ -2,6 +2,7 @@ import React from 'react';
 import { VStack, Button, Box } from '@chakra-ui/react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { FaLock } from 'react-icons/fa';
 
 export default function Sidebar() {
   const { logout } = useAuth();
@@ -31,6 +32,17 @@ export default function Sidebar() {
             {item.label}
           </Button>
         ))}
+        <Button
+          variant="ghost"
+          leftIcon={<FaLock />}
+          colorScheme="whiteAlpha"
+          justifyContent="flex-start"
+          fontWeight="bold"
+          fontSize="lg"
+          onClick={() => window.open('/privacy-policy', '_blank')}
+        >
+          Privacy Policy
+        </Button>
         <Button
           variant="ghost"
           leftIcon={<span>🚪</span>}

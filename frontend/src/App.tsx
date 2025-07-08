@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Notes from './pages/Notes';
 import Profile from './pages/Profile';
 import MainLayout from './components/Layout/MainLayout';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated, loading } = useAuth();
@@ -42,6 +43,7 @@ export default function App() {
             </PrivateRoute>
           }
         />
+        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </AuthProvider>
