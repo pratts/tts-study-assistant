@@ -123,6 +123,10 @@ async function loadSiteNotes() {
         if (!authState.loggedIn) {
             document.getElementById('notes-section').classList.add('hidden');
             document.getElementById('empty-state').classList.remove('hidden');
+            // Clear section title and carousel
+            const sectionTitle = document.querySelector('#notes-section h3');
+            if (sectionTitle) sectionTitle.textContent = '';
+            document.getElementById('notes-carousel').innerHTML = '';
             return;
         }
 
@@ -161,7 +165,7 @@ async function loadSiteNotes() {
         // Update the section title to show domain
         const sectionTitle = document.querySelector('#notes-section h3');
         if (sectionTitle) {
-            sectionTitle.textContent = `Notes from ${currentDomain}`;
+            sectionTitle.textContent = siteNotes.length > 0 ? `Notes from ${currentDomain}` : '';
         }
 
         displayNotes(siteNotes);
@@ -169,6 +173,10 @@ async function loadSiteNotes() {
         console.error('Failed to load notes:', error);
         document.getElementById('notes-section').classList.add('hidden');
         document.getElementById('empty-state').classList.remove('hidden');
+        // Clear section title and carousel
+        const sectionTitle = document.querySelector('#notes-section h3');
+        if (sectionTitle) sectionTitle.textContent = '';
+        document.getElementById('notes-carousel').innerHTML = '';
     }
 }
 
@@ -180,6 +188,7 @@ function displayNotes(notes) {
     if (notes.length === 0) {
         notesSection.classList.add('hidden');
         emptyState.classList.remove('hidden');
+        carousel.innerHTML = '';
         return;
     }
 
