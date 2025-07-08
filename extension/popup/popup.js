@@ -146,23 +146,13 @@ async function loadSiteNotes() {
         };
 
         const currentDomain = getMainDomain(currentUrl.hostname);
+        console.log('main domain:', currentUrl, ' currentDomain: ', currentDomain);
 
-        // Get all notes
-        const notes = await apiClient.getNotes();
+        // Get all notes for this domain
+        const siteNotes = await apiClient.getNotes({ domain: currentDomain });
+        console.log('filtered notes:', siteNotes);
 
-        // Filter notes from current domain (including all subdomains)
-        const siteNotes = notes.filter(note => {
-            if (!note.source_url) return false;
-            try {
-                const noteUrl = new URL(note.source_url);
-                const noteDomain = getMainDomain(noteUrl.hostname);
-                return noteDomain === currentDomain;
-            } catch {
-                return false;
-            }
-        }).slice(0, 10);
-
-        // Update the section title to show domain
+        // Update the section title to show domain, or clear if no notes
         const sectionTitle = document.querySelector('#notes-section h3');
         if (sectionTitle) {
             sectionTitle.textContent = siteNotes.length > 0 ? `Notes from ${currentDomain}` : '';

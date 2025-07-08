@@ -20,7 +20,13 @@ func NewNotesHandler() *NotesHandler {
 func (h *NotesHandler) GetNotes(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
-	notes, err := h.notesService.GetNotes(userID)
+	// Parse pagination and filter params
+	page := c.QueryInt("page", 1)
+	pageSize := c.QueryInt("page_size", 10)
+	sourceURL := c.Query("source_url", "")
+	domain := c.Query("domain", "")
+
+	notes, err := h.notesService.GetNotes(userID, page, pageSize, sourceURL, domain)
 	if err != nil {
 		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to fetch notes")
 	}

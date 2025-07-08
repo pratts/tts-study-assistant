@@ -14,6 +14,7 @@ type Note struct {
 	Content     string    `gorm:"type:text;not null"`
 	SourceURL   string
 	SourceTitle string
+	Domain      string         `gorm:"type:text" json:"domain,omitempty"`
 	Metadata    datatypes.JSON `gorm:"type:jsonb" json:"metadata,omitempty"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time

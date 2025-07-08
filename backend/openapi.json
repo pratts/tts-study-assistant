@@ -109,6 +109,10 @@
                     "source_title": {
                         "type": "string"
                     },
+                    "domain": {
+                        "type": "string",
+                        "description": "Main domain for the note"
+                    },
                     "metadata": {
                         "type": "object",
                         "description": "Arbitrary metadata for the note"
@@ -138,6 +142,10 @@
                     "source_title": {
                         "type": "string"
                     },
+                    "domain": {
+                        "type": "string",
+                        "description": "Main domain for the note (optional, will be extracted from source_url if not provided)"
+                    },
                     "metadata": {
                         "type": "object",
                         "description": "Arbitrary metadata for the note"
@@ -155,6 +163,10 @@
                     },
                     "source_title": {
                         "type": "string"
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Main domain for the note (optional)"
                     },
                     "metadata": {
                         "type": "object",
@@ -352,7 +364,47 @@
         },
         "/notes": {
             "get": {
-                "summary": "Get all notes for the authenticated user",
+                "summary": "Get paginated notes for the authenticated user",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "Page number (default: 1)",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    },
+                    {
+                        "name": "page_size",
+                        "in": "query",
+                        "description": "Number of notes per page (default: 10)",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 10
+                        }
+                    },
+                    {
+                        "name": "source_url",
+                        "in": "query",
+                        "description": "Filter notes by exact source_url",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "domain",
+                        "in": "query",
+                        "description": "Filter notes by main domain (e.g. 'edmingle.com')",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
                 "security": [
                     {
                         "bearerAuth": []

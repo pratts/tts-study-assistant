@@ -3,6 +3,8 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"net/url"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/pratts/tts-study-assistant/backend/internal/database"
@@ -19,6 +21,7 @@ type CreateNoteRequest struct {
 	Content     string         `json:"content" validate:"required"`
 	SourceURL   string         `json:"source_url,omitempty"`
 	SourceTitle string         `json:"source_title,omitempty"`
+	Domain      string         `json:"domain,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
@@ -26,6 +29,7 @@ type UpdateNoteRequest struct {
 	Content     string         `json:"content,omitempty"`
 	SourceURL   string         `json:"source_url,omitempty"`
 	SourceTitle string         `json:"source_title,omitempty"`
+	Domain      string         `json:"domain,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
@@ -34,6 +38,7 @@ type NoteResponse struct {
 	Content     string         `json:"content"`
 	SourceURL   string         `json:"source_url,omitempty"`
 	SourceTitle string         `json:"source_title,omitempty"`
+	Domain      string         `json:"domain,omitempty"`   // Main domain for the note
 	Metadata    map[string]any `json:"metadata,omitempty"` // Arbitrary metadata for the note
 	CreatedAt   string         `json:"created_at"`
 	UpdatedAt   string         `json:"updated_at"`
@@ -45,9 +50,25 @@ func NewNotesService() *NotesService {
 	}
 }
 
-func (s *NotesService) GetNotes(userID string) ([]NoteResponse, error) {
+func (s *NotesService) GetNotes(userID string, page, pageSize int, sourceURL string, domain string) ([]NoteResponse, error) {
 	var notes []models.Note
-	if err := s.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&notes).Error; err != nil {
+	db := s.db.Where("user_id = ?", userID)
+	if sourceURL != "" {
+		db = db.Where("source_url = ?", sourceURL)
+	}
+	if domain != "" {
+		db = db.Where("domain = ?", domain)
+	}
+	db = db.Order("created_at DESC")
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	db = db.Offset((page - 1) * pageSize).Limit(pageSize)
+
+	if err := db.Find(&notes).Error; err != nil {
 		return nil, err
 	}
 
@@ -62,6 +83,7 @@ func (s *NotesService) GetNotes(userID string) ([]NoteResponse, error) {
 			Content:     note.Content,
 			SourceURL:   note.SourceURL,
 			SourceTitle: note.SourceTitle,
+			Domain:      note.Domain,
 			Metadata:    metadata,
 			CreatedAt:   note.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			UpdatedAt:   note.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
@@ -88,6 +110,7 @@ func (s *NotesService) GetNoteByID(noteID, userID string) (*NoteResponse, error)
 		Content:     note.Content,
 		SourceURL:   note.SourceURL,
 		SourceTitle: note.SourceTitle,
+		Domain:      note.Domain,
 		Metadata:    metadata,
 		CreatedAt:   note.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   note.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
@@ -105,11 +128,24 @@ func (s *NotesService) CreateNote(req *CreateNoteRequest, userID string) (*NoteR
 		b, _ := json.Marshal(req.Metadata)
 		metadata = datatypes.JSON(b)
 	}
+	// Extract domain if not provided
+	domain := req.Domain
+	if domain == "" && req.SourceURL != "" {
+		if u, err := url.Parse(req.SourceURL); err == nil {
+			parts := strings.Split(u.Hostname(), ".")
+			if len(parts) > 2 {
+				domain = strings.Join(parts[len(parts)-2:], ".")
+			} else {
+				domain = u.Hostname()
+			}
+		}
+	}
 	note := models.Note{
 		UserID:      userUUID,
 		Content:     req.Content,
 		SourceURL:   req.SourceURL,
 		SourceTitle: req.SourceTitle,
+		Domain:      domain,
 		Metadata:    metadata,
 	}
 	if err := s.db.Create(&note).Error; err != nil {
@@ -124,6 +160,7 @@ func (s *NotesService) CreateNote(req *CreateNoteRequest, userID string) (*NoteR
 		Content:     note.Content,
 		SourceURL:   note.SourceURL,
 		SourceTitle: note.SourceTitle,
+		Domain:      note.Domain,
 		Metadata:    respMetadata,
 		CreatedAt:   note.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   note.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
@@ -149,6 +186,9 @@ func (s *NotesService) UpdateNote(noteID, userID string, req *UpdateNoteRequest)
 	if req.SourceTitle != "" {
 		note.SourceTitle = req.SourceTitle
 	}
+	if req.Domain != "" {
+		note.Domain = req.Domain
+	}
 	if req.Metadata != nil {
 		b, _ := json.Marshal(req.Metadata)
 		note.Metadata = datatypes.JSON(b)
@@ -165,6 +205,7 @@ func (s *NotesService) UpdateNote(noteID, userID string, req *UpdateNoteRequest)
 		Content:     note.Content,
 		SourceURL:   note.SourceURL,
 		SourceTitle: note.SourceTitle,
+		Domain:      note.Domain,
 		Metadata:    respMetadata,
 		CreatedAt:   note.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   note.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),

@@ -48,8 +48,14 @@ export class ApiClient {
         return this.authManager.getAccessToken();
     }
 
-    async getNotes() {
-        const data = await this._fetchWithAuth(`${this.API_URL}/notes`);
+    async getNotes({ domain, source_url, page = 1, page_size = 10 } = {}) {
+        const params = new URLSearchParams();
+        if (domain) params.set('domain', domain);
+        if (source_url) params.set('source_url', source_url);
+        if (page) params.set('page', page);
+        if (page_size) params.set('page_size', page_size);
+        const url = `${this.API_URL}/notes?${params.toString()}`;
+        const data = await this._fetchWithAuth(url);
         return data.data || [];
     }
 
