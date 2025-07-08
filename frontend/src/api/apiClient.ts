@@ -1,5 +1,7 @@
-// const API_URL = 'http://localhost:3000/api/v1'; // Change to your backend URL if needed
-const API_URL = 'https://tts-study-assistant-production.up.railway.app/api/v1';
+// Add Vite env type declaration for TypeScript
+/// <reference types="vite/client" />
+// Use Vite env variable for API URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
 function getAuthHeaders(): HeadersInit | undefined {
     const token = localStorage.getItem('access_token');
