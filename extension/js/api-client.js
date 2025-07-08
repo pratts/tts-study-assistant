@@ -1,8 +1,11 @@
 // extension/js/api-client.js
 
+import { AuthManager } from './auth-manager.js';
+
 export class ApiClient {
     constructor() {
         this.API_URL = 'http://localhost:3000/api/v1'; // Update for production
+        this.authManager = new AuthManager();
     }
 
     static async isAuthenticated() {
@@ -13,49 +16,56 @@ export class ApiClient {
         });
     }
 
+    async _fetchWithAuth(url, options = {}, retry = true) {
+        let token = await this.authManager.getAccessToken();
+        if (!token) throw new Error('Not authenticated');
+        options.headers = options.headers || {};
+        options.headers['Authorization'] = `Bearer ${token}`;
+
+        let resp = await fetch(url, options);
+        if (resp.status === 401) {
+            const data = await resp.json().catch(() => ({}));
+            if (data.code === 'TOKEN_EXPIRED' && retry) {
+                // Try to refresh and retry once
+                const refreshed = await this.authManager.refreshToken();
+                if (refreshed.success) {
+                    token = await this.authManager.getAccessToken();
+                    options.headers['Authorization'] = `Bearer ${token}`;
+                    resp = await fetch(url, options);
+                } else {
+                    throw new Error('Session expired. Please login again.');
+                }
+            } else {
+                throw data;
+            }
+        }
+        if (!resp.ok) throw await resp.json();
+        return resp.json();
+    }
+
     async _getAccessToken() {
-        return new Promise((resolve) => {
-            chrome.storage.local.get(['access_token'], (result) => {
-                resolve(result['access_token'] || null);
-            });
-        });
+        // Deprecated: use this.authManager.getAccessToken()
+        return this.authManager.getAccessToken();
     }
 
     async getNotes() {
-        const token = await this._getAccessToken();
-        if (!token) throw new Error('Not authenticated');
-        const resp = await fetch(`${this.API_URL}/notes`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!resp.ok) throw await resp.json();
-        const data = await resp.json();
+        const data = await this._fetchWithAuth(`${this.API_URL}/notes`);
         return data.data || [];
     }
 
     async createNote(noteData) {
-        const token = await this._getAccessToken();
-        if (!token) throw new Error('Not authenticated');
-        const resp = await fetch(`${this.API_URL}/notes`, {
+        const data = await this._fetchWithAuth(`${this.API_URL}/notes`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(noteData)
         });
-        if (!resp.ok) throw await resp.json();
-        const data = await resp.json();
         return data.data;
     }
 
     async deleteNote(noteId) {
-        const token = await this._getAccessToken();
-        if (!token) throw new Error('Not authenticated');
-        const resp = await fetch(`${this.API_URL}/notes/${noteId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}` }
+        await this._fetchWithAuth(`${this.API_URL}/notes/${noteId}`, {
+            method: 'DELETE'
         });
-        if (!resp.ok) throw await resp.json();
         return true;
     }
 } 
