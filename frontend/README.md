@@ -1,72 +1,49 @@
-# TTS Study Assistant Frontend
+# Frontend — TTS Study Assistant
 
-A modern, responsive notes app frontend for TTS Study Assistant, built with React, TypeScript, and Chakra UI. Matches the Chrome extension's color scheme and UX.
+Modern React web app for managing and listening to your notes.
 
-## Features
+## Requirements
 
-- Login & Registration (with secure token storage)
-- Dashboard: stats, most recent note, domain-wise notes
-- Notes list: domain, site, length, read time, copy/delete
-- Profile: view/update user info, change password
-- Logout
-- Responsive, clean UI with blue gradient theme
+- Node.js 18+
+- npm or yarn
 
-## Stack
+## Setup
 
-- React + TypeScript
-- Chakra UI (easy to swap for Tailwind if preferred)
-- React Router
-- React Query (for API data)
-- Web Speech API (for TTS)
+1. **Install dependencies:**
 
-## Structure
+   ```sh
+   cd frontend
+   npm install
+   # or
+   yarn install
+   ```
 
-```
-frontend/
-  src/
-    api/
-      apiClient.ts
-    components/
-      Auth/
-        LoginForm.tsx
-        RegisterForm.tsx
-      Dashboard/
-        StatsCard.tsx
-        RecentNote.tsx
-        DomainTable.tsx
-      Layout/
-        Sidebar.tsx
-        MainLayout.tsx
-      Notes/
-        NotesTable.tsx
-      Profile/
-        ProfileForm.tsx
-    context/
-      AuthContext.tsx
-    pages/
-      Home.tsx
-      Dashboard.tsx
-      Notes.tsx
-      Profile.tsx
-    theme/
-      index.ts
-    App.tsx
-    index.tsx
-  package.json
-  tsconfig.json
-  README.md
-```
+2. **Configure environment variables:**
 
-## Getting Started
+   - Copy `.env.example` to `.env` and set:
+     - `VITE_API_URL` — URL of the backend API (e.g. `http://localhost:3000/api/v1`)
 
-1. `cd frontend`
-2. `npm install`
-3. `npm run dev`
+3. **Run locally:**
 
-## API URL
+   ```sh
+   npm run dev
+   # or
+   yarn dev
+   ```
 
-- Set the API URL in `src/api/apiClient.ts` or use an environment variable.
+4. **Build for production:**
 
-## Deployment
+   ```sh
+   npm run build
+   # or
+   yarn build
+   ```
 
-- Build with `npm run build` and deploy to Vercel, Netlify, or serve as static files from your Go backend.
+5. **Deploy:**
+   - Recommended: [Vercel](https://vercel.com/)
+   - Set `VITE_API_URL` in Vercel dashboard for production
+
+## API Integration
+
+- All API calls require pre-hashed (SHA-256) passwords.
+- Handles JWT/refresh token logic automatically.

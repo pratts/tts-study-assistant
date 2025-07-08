@@ -1,33 +1,34 @@
-# TTS Study Assistant
+# Chrome Extension — TTS Study Assistant
 
-A Chrome extension that provides instant text-to-speech functionality with intelligent study features.
+Quickly save and listen to notes from any website.
 
-## Features
+## Requirements
 
-- 🔊 Instant text-to-speech on selection
-- ⌨️ Keyboard shortcut support (Ctrl+Shift+S)
-- 🎚️ Adjustable speed, pitch, and volume
-- 🎯 Works on any website
-- 📝 Smart text preprocessing
+- Chrome browser
 
-## Installation (Development)
+## Setup & Installation
 
-1. Clone this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable "Developer mode"
-4. Click "Load unpacked"
-5. Select the `extension` folder
+1. **Build (if using a build step):**
+
+   - (If using plain JS, skip. If using a bundler, run the build command.)
+
+2. **Load the extension in Chrome:**
+
+   - Go to `chrome://extensions/`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select the `extension/` folder
+
+3. **Configuration:**
+   - Set the backend API URL in the extension config (if applicable)
 
 ## Usage
 
-1. Select any text on a webpage
-2. Click the speaker button that appears OR press `Ctrl+Shift+S`
-3. Adjust settings through the extension popup
+- Click the extension icon to open the popup
+- Save notes from the current page
+- Listen to notes with built-in TTS
 
-## Development Setup
+## Notes
 
-```bash
-# Install dependencies (when we add build tools)
-npm install
-
-# No build step needed for basic version
+- Passwords are pre-hashed before sending to the backend
+- Requires a backend account
