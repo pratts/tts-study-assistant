@@ -1,120 +1,300 @@
-// Popup script
-let currentState = null;
+import { ApiClient } from '../js/api-client.js';
+const apiClient = new ApiClient();
 
-// === AUTH MODAL LOGIC ===
+let currentState = null;
 let authState = {
     loggedIn: false,
-    username: null
+    user: null
 };
 
-function showModal(overlayId) {
-    document.getElementById(overlayId).classList.add('active');
-}
-function hideModal(overlayId) {
-    document.getElementById(overlayId).classList.remove('active');
-}
+const API_BASE = 'http://localhost:3000/api/v1';
 
-function updateAuthHeader() {
-    const header = document.getElementById('auth-header');
-    if (!header) return;
-    if (authState.loggedIn) {
-        header.innerHTML = `<span class="welcome-msg">Welcome, <b>${authState.username}</b></span> <button class="header-btn" id="logout-btn">Logout</button>`;
-        document.getElementById('logout-btn').onclick = async () => {
-            // Call logout API
-            const auth = await getAuth();
-            if (auth.refresh_token) {
-                try {
-                    await apiRequest('/auth/logout', {
-                        method: 'POST',
-                        body: { refresh_token: auth.refresh_token }
-                    });
-                } catch { }
-            }
-            await clearAuth();
-            authState.loggedIn = false;
-            authState.username = null;
-            updateAuthHeader();
-        };
-    } else {
-        header.innerHTML = `<button class="header-btn" id="login-btn">Login</button> <button class="header-btn" id="signup-btn">Sign Up</button>`;
-        document.getElementById('login-btn').onclick = () => showModal('login-modal-overlay');
-        document.getElementById('signup-btn').onclick = () => showModal('signup-modal-overlay');
-    }
-}
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
+    await checkAuth();
+    await loadSettings();
+    await loadSiteNotes();
+    setupEventListeners();
+    setupAuthListeners();
 
+    // Get TTS state
+    const stateResponse = await chrome.runtime.sendMessage({ action: 'getState' });
+    currentState = stateResponse.state;
+    updatePlayerControls();
+});
+
+// Auth Functions
 async function sha256(str) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
     return Array.from(new Uint8Array(buf)).map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
-// === AUTH API INTEGRATION ===
-const API_BASE = 'http://localhost:3000/api/v1'; // Change to your backend base URL
-
-async function apiRequest(path, { method = 'GET', body, token } = {}) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}${path}`, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw await res.json();
-    return await res.json();
+async function checkAuth() {
+    const auth = await chrome.storage.local.get(['access_token', 'refresh_token', 'user']);
+    if (auth.access_token && auth.user) {
+        authState.loggedIn = true;
+        authState.user = auth.user;
+    }
+    updateAuthHeader();
 }
 
-async function saveAuth(auth) {
-    await chrome.storage.local.set({
-        access_token: auth.access_token,
-        refresh_token: auth.refresh_token,
-        user: auth.user
-    });
+function updateAuthHeader() {
+    const header = document.getElementById('auth-header');
+
+    if (authState.loggedIn) {
+        header.innerHTML = `
+            <div class="user-info">
+                <span>${authState.user.name || authState.user.email}</span>
+                <button id="profile-btn" title="Profile">👤</button>
+                <button id="logout-btn" title="Logout">🚪</button>
+            </div>
+        `;
+
+        // Add event listeners after creating elements
+        document.getElementById('profile-btn').addEventListener('click', () => {
+            chrome.tabs.create({ url: 'https://your-dashboard-url.com/profile' });
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await logout();
+        });
+    } else {
+        header.innerHTML = `
+            <button class="header-btn" id="login-btn">Login</button>
+            <button class="header-btn" id="signup-btn">Sign Up</button>
+        `;
+
+        // Add event listeners after creating elements
+        document.getElementById('login-btn').addEventListener('click', () => {
+            showModal('login-modal-overlay');
+        });
+
+        document.getElementById('signup-btn').addEventListener('click', () => {
+            showModal('signup-modal-overlay');
+        });
+    }
 }
-async function clearAuth() {
+
+async function logout() {
+    const auth = await chrome.storage.local.get(['refresh_token']);
+    if (auth.refresh_token) {
+        try {
+            await fetch(`${API_BASE}/auth/logout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: auth.refresh_token })
+            });
+        } catch (e) {
+            console.error('Logout error:', e);
+        }
+    }
+
     await chrome.storage.local.remove(['access_token', 'refresh_token', 'user']);
-}
-async function getAuth() {
-    const data = await chrome.storage.local.get(['access_token', 'refresh_token', 'user']);
-    return data;
-}
-
-async function fetchProfile(token) {
-    return apiRequest('/user/profile', { token });
+    authState.loggedIn = false;
+    authState.user = null;
+    updateAuthHeader();
+    await loadSiteNotes();
 }
 
-import { ApiClient } from '../js/api-client.js';
-const apiClient = new ApiClient();
+// Modal Functions
+function showModal(modalId) {
+    document.getElementById(modalId).classList.add('active');
+}
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // Get current settings and state
+function hideModal(modalId) {
+    document.getElementById(modalId).classList.remove('active');
+}
+
+// Settings
+async function loadSettings() {
     const data = await chrome.storage.sync.get(['settings']);
     const settings = data.settings || {};
 
-    // Get TTS state
-    const stateResponse = await chrome.runtime.sendMessage({ action: 'getState' });
-    currentState = stateResponse.state;
+    const rateSlider = document.getElementById('rate-slider');
+    const rateValue = document.getElementById('rate-value');
 
-    // Initialize UI
-    updateUI(settings);
+    rateSlider.value = settings.rate || 1.0;
+    rateValue.textContent = `${settings.rate || 1.0}x`;
+}
 
-    // Setup event listeners
-    setupEventListeners();
+// Site Notes
+async function loadSiteNotes() {
+    try {
+        if (!authState.loggedIn) {
+            document.getElementById('notes-section').classList.add('hidden');
+            document.getElementById('empty-state').classList.remove('hidden');
+            return;
+        }
+
+        // Get current tab
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const currentUrl = new URL(tab.url);
+        const siteDomain = currentUrl.hostname;
+
+        // Get all notes
+        const notes = await apiClient.getNotes();
+
+        // Filter notes from current site
+        const siteNotes = notes.filter(note => {
+            if (!note.source_url) return false;
+            try {
+                const noteUrl = new URL(note.source_url);
+                return noteUrl.hostname === siteDomain;
+            } catch {
+                return false;
+            }
+        }).slice(0, 10);
+
+        console.log('all notes: ', notes);
+        console.log('site notes: ', siteNotes);
+        displayNotes(siteNotes);
+    } catch (error) {
+        console.error('Failed to load notes:', error);
+        document.getElementById('notes-section').classList.add('hidden');
+        document.getElementById('empty-state').classList.remove('hidden');
+    }
+}
+
+function displayNotes(notes) {
+    const carousel = document.getElementById('notes-carousel');
+    const notesSection = document.getElementById('notes-section');
+    const emptyState = document.getElementById('empty-state');
+
+    if (notes.length === 0) {
+        notesSection.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        return;
+    }
+
+    notesSection.classList.remove('hidden');
+    emptyState.classList.add('hidden');
+
+    // Clear existing content
+    carousel.innerHTML = '';
+
+    // Create note cards
+    notes.forEach(note => {
+        const noteCard = document.createElement('div');
+        noteCard.className = 'note-card';
+
+        const noteContent = document.createElement('div');
+        noteContent.className = 'note-content';
+        noteContent.textContent = truncateText(note.content, 120);
+
+        const noteDate = document.createElement('div');
+        noteDate.className = 'note-date';
+        noteDate.textContent = formatDate(note.created_at);
+
+        const noteActions = document.createElement('div');
+        noteActions.className = 'note-actions';
+
+        const playBtn = document.createElement('button');
+        playBtn.textContent = '🔊 Play';
+        playBtn.addEventListener('click', async () => {
+            await chrome.runtime.sendMessage({
+                action: 'speak',
+                text: note.content
+            });
+        });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '🗑️ Delete';
+        deleteBtn.addEventListener('click', async () => {
+            if (confirm('Delete this note?')) {
+                try {
+                    await apiClient.deleteNote(note.id);
+                    await loadSiteNotes();
+                } catch (error) {
+                    console.error('Failed to delete note:', error);
+                }
+            }
+        });
+
+        noteActions.appendChild(playBtn);
+        noteActions.appendChild(deleteBtn);
+
+        noteCard.appendChild(noteContent);
+        noteCard.appendChild(noteDate);
+        noteCard.appendChild(noteActions);
+
+        carousel.appendChild(noteCard);
+    });
+}
+
+// Player Controls
+function updatePlayerControls() {
+    const playerControls = document.getElementById('player-controls');
+    const playPauseBtn = document.getElementById('play-pause-btn');
+    const nowPlaying = document.getElementById('now-playing');
+
+    if (currentState && (currentState.isPlaying || currentState.isPaused)) {
+        playerControls.classList.remove('hidden');
+
+        if (currentState.isPlaying) {
+            playPauseBtn.innerHTML = '⏸️ Pause';
+        } else {
+            playPauseBtn.innerHTML = '▶️ Resume';
+        }
+
+        if (currentState.currentText) {
+            nowPlaying.textContent = truncateText(currentState.currentText, 50);
+        }
+    } else {
+        playerControls.classList.add('hidden');
+    }
+}
+
+// Event Listeners
+function setupEventListeners() {
+    document.getElementById('rate-slider').addEventListener('input', async (e) => {
+        const value = parseFloat(e.target.value);
+        document.getElementById('rate-value').textContent = `${value}x`;
+        await updateSetting('rate', value);
+    });
+
+    // Player controls
+    document.getElementById('play-pause-btn').addEventListener('click', async () => {
+        if (currentState.isPlaying) {
+            await chrome.runtime.sendMessage({ action: 'pause' });
+        } else {
+            await chrome.runtime.sendMessage({ action: 'resume' });
+        }
+    });
+
+    document.getElementById('stop-btn').addEventListener('click', async () => {
+        await chrome.runtime.sendMessage({ action: 'stop' });
+    });
+
+    // View all notes
+    document.getElementById('view-all-notes').addEventListener('click', () => {
+        chrome.tabs.create({ url: 'https://your-dashboard-url.com/notes' });
+    });
 
     // Listen for state updates
     chrome.runtime.onMessage.addListener((request) => {
         if (request.action === 'stateUpdate') {
             currentState = request.state;
+            updatePlayerControls();
         }
     });
+}
 
-    // Modal open/close
-    document.getElementById('login-close').onclick = () => hideModal('login-modal-overlay');
-    document.getElementById('signup-close').onclick = () => hideModal('signup-modal-overlay');
+function setupAuthListeners() {
+    // Modal close buttons
+    document.getElementById('login-close').addEventListener('click', () => {
+        hideModal('login-modal-overlay');
+    });
+
+    document.getElementById('signup-close').addEventListener('click', () => {
+        hideModal('signup-modal-overlay');
+    });
 
     // Click outside to close
-    document.getElementById('login-modal-overlay').addEventListener('mousedown', (e) => {
+    document.getElementById('login-modal-overlay').addEventListener('click', (e) => {
         if (e.target === e.currentTarget) hideModal('login-modal-overlay');
     });
-    document.getElementById('signup-modal-overlay').addEventListener('mousedown', (e) => {
+
+    document.getElementById('signup-modal-overlay').addEventListener('click', (e) => {
         if (e.target === e.currentTarget) hideModal('signup-modal-overlay');
     });
 
@@ -123,382 +303,77 @@ document.addEventListener('DOMContentLoaded', async () => {
         e.preventDefault();
         const email = document.getElementById('login-email').value.trim();
         const password = document.getElementById('login-password').value;
-        if (!email || !password) {
-            alert('Please enter both email and password.');
-            return;
-        }
-        const hashed = await sha256(password);
+
         try {
-            const resp = await apiRequest('/auth/login', {
+            const hashed = await sha256(password);
+            const resp = await fetch(`${API_BASE}/auth/login`, {
                 method: 'POST',
-                body: { email, password: hashed, source: 'extension' }
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password: hashed, source: 'extension' })
             });
-            await saveAuth(resp.data);
+
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.message);
+
+            await chrome.storage.local.set({
+                access_token: data.data.access_token,
+                refresh_token: data.data.refresh_token,
+                user: data.data.user
+            });
+
             authState.loggedIn = true;
-            authState.username = resp.data.user.name || resp.data.user.email;
+            authState.user = data.data.user;
+
             hideModal('login-modal-overlay');
             updateAuthHeader();
-            loadRecentNotes();
+            await loadSiteNotes();
         } catch (err) {
             alert(err.message || 'Login failed');
         }
     };
+
     // Signup form
     document.getElementById('signup-form').onsubmit = async (e) => {
         e.preventDefault();
         const name = document.getElementById('signup-name').value.trim();
         const email = document.getElementById('signup-email').value.trim();
         const password = document.getElementById('signup-password').value;
-        if (!name || !email || !password) {
-            alert('Please fill all fields.');
-            return;
-        }
-        const hashed = await sha256(password);
+
         try {
-            const resp = await apiRequest('/auth/register', {
+            const hashed = await sha256(password);
+            const resp = await fetch(`${API_BASE}/auth/register`, {
                 method: 'POST',
-                body: { name, email, password: hashed }
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, password: hashed })
             });
-            await saveAuth(resp.data);
+
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.message);
+
+            await chrome.storage.local.set({
+                access_token: data.data.access_token,
+                refresh_token: data.data.refresh_token,
+                user: data.data.user
+            });
+
             authState.loggedIn = true;
-            authState.username = resp.data.user.name || resp.data.user.email;
+            authState.user = data.data.user;
+
             hideModal('signup-modal-overlay');
             updateAuthHeader();
+            await loadSiteNotes();
         } catch (err) {
             alert(err.message || 'Signup failed');
         }
     };
-
-    // On load, check for token and fetch profile
-    const auth = await getAuth();
-    if (auth.access_token && auth.user) {
-        authState.loggedIn = true;
-        authState.username = auth.user.name || auth.user.email;
-        // Optionally, refresh profile from backend:
-        try {
-            const profile = await fetchProfile(auth.access_token);
-            console.log()
-            authState.username = profile.data.name || profile.data.email;
-            // Update stored user info
-            await chrome.storage.local.set({ user: profile });
-        } catch {
-            // If token expired or profile fetch fails, clear auth
-            await clearAuth();
-            authState.loggedIn = false;
-            authState.username = null;
-        }
-    }
-    updateAuthHeader();
-
-    // === TTS DEMO FUNCTIONALITY ===
-    let synth = window.speechSynthesis;
-    let utterance = null;
-    let ttsEnabled = true;
-    let paused = false;
-
-    // On load, restore TTS enabled state from storage
-    chrome.storage.sync.get(['tts_enabled'], (data) => {
-        ttsEnabled = data.tts_enabled !== false; // default to true
-        updateTTSControls();
-    });
-
-    function updateTTSControls() {
-        const statusText = document.getElementById('status-text');
-        if (statusText) {
-            statusText.textContent = ttsEnabled ? 'Active' : 'Disabled';
-        }
-        document.getElementById('toggle-btn').textContent = ttsEnabled ? 'Disable TTS' : 'Enable TTS';
-        updateStatusDot();
-        // Disable/enable all TTS controls
-        const controls = document.querySelectorAll('#tts-controls button, #tts-controls input');
-        controls.forEach(el => {
-            el.disabled = !ttsEnabled;
-        });
-    }
-
-    // Sliders
-    const volumeSlider = document.getElementById('volume-slider');
-    const pitchSlider = document.getElementById('pitch-slider');
-    const rateSlider = document.getElementById('rate-slider');
-    const volumeValue = document.getElementById('volume-value');
-    const pitchValue = document.getElementById('pitch-value');
-    const rateValue = document.getElementById('rate-value');
-
-    function updateSliderDisplays() {
-        if (volumeValue) volumeValue.textContent = Math.round(volumeSlider.value * 100) + '%';
-        if (pitchValue) pitchValue.textContent = parseFloat(pitchSlider.value).toFixed(2);
-        if (rateValue) rateValue.textContent = parseFloat(rateSlider.value).toFixed(2) + 'x';
-    }
-    if (volumeSlider) volumeSlider.oninput = updateSliderDisplays;
-    if (pitchSlider) pitchSlider.oninput = updateSliderDisplays;
-    if (rateSlider) rateSlider.oninput = updateSliderDisplays;
-    updateSliderDisplays();
-
-    // Button grid logic
-    const ttsControls = document.getElementById('tts-controls');
-    const pauseBtn = document.getElementById('pause-btn');
-    const resumeBtn = document.getElementById('resume-btn');
-    const stopBtn = document.getElementById('stop-btn');
-    const playBtn = document.getElementById('play-btn');
-    const clearBtn = document.getElementById('clear-btn');
-
-    let isPlaying = false;
-    let isPaused = false;
-    let demoUtterance = null;
-
-    function updateButtonStates() {
-        if (!currentState) return;
-        ttsControls.style.display = '';
-        // Play button: enable only if there is something in the queue or a current text
-        const canPlay = (currentState.queue && currentState.queue.length > 0) || currentState.currentText;
-        if (currentState.isPlaying && !currentState.isPaused) {
-            playBtn.textContent = 'Pause';
-            playBtn.disabled = false;
-            pauseBtn.style.display = 'none';
-            resumeBtn.style.display = 'none';
-        } else {
-            playBtn.textContent = 'Play';
-            playBtn.disabled = !canPlay;
-            pauseBtn.style.display = 'none';
-            resumeBtn.style.display = 'none';
-        }
-        // Enable clear queue if there are items in the queue
-        if (currentState.queue && currentState.queue.length > 0) {
-            clearBtn.disabled = false;
-        } else {
-            clearBtn.disabled = true;
-        }
-        // Stop button always visible if playing or paused
-        if (currentState.isPlaying || currentState.isPaused) {
-            stopBtn.style.display = '';
-        } else {
-            stopBtn.style.display = 'none';
-        }
-    }
-
-    function updateStatusDot() {
-        const statusDot = document.querySelector('.status-dot');
-        const statusText = document.getElementById('status-text');
-        if (!ttsEnabled) {
-            statusDot.classList.add('disabled');
-            statusText.classList.add('disabled');
-        } else {
-            statusDot.classList.remove('disabled');
-            statusText.classList.remove('disabled');
-        }
-    }
-
-    // Demo TTS (for popup only, not content script)
-    function playDemoTTS() {
-        if (!ttsEnabled) return;
-        if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-        demoUtterance = new SpeechSynthesisUtterance('This is a demo of the Study Assistant TTS.');
-        demoUtterance.volume = parseFloat(volumeSlider.value);
-        demoUtterance.pitch = parseFloat(pitchSlider.value);
-        demoUtterance.rate = parseFloat(rateSlider.value);
-        demoUtterance.onstart = () => {
-            isPlaying = true;
-            isPaused = false;
-            updateButtonStates();
-        };
-        demoUtterance.onpause = () => {
-            isPaused = true;
-            isPlaying = false;
-            updateButtonStates();
-        };
-        demoUtterance.onresume = () => {
-            isPaused = false;
-            isPlaying = true;
-            updateButtonStates();
-        };
-        demoUtterance.onend = () => {
-            isPlaying = false;
-            isPaused = false;
-            updateButtonStates();
-        };
-        window.speechSynthesis.speak(demoUtterance);
-    }
-
-    pauseBtn.onclick = () => {
-        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-            window.speechSynthesis.pause();
-        }
-    };
-    resumeBtn.onclick = () => {
-        if (window.speechSynthesis.paused) {
-            window.speechSynthesis.resume();
-        }
-    };
-    stopBtn.onclick = () => {
-        if (window.speechSynthesis.speaking || window.speechSynthesis.paused) {
-            window.speechSynthesis.cancel();
-        }
-    };
-
-    // Remove all speechSynthesis event listeners and polling
-    // Instead, listen for stateUpdate messages from background
-    chrome.runtime.onMessage.addListener((request) => {
-        if (request.action === 'stateUpdate') {
-            currentState = request.state;
-            updateButtonStates();
-        }
-    });
-
-    // Initial state
-    updateButtonStates();
-    updateStatusDot();
-
-    document.getElementById('toggle-btn').onclick = () => {
-        ttsEnabled = !ttsEnabled;
-        chrome.storage.sync.set({ tts_enabled: ttsEnabled });
-        updateTTSControls();
-        // If disabling, clear the queue and stop playback
-        if (!ttsEnabled) {
-            chrome.runtime.sendMessage({ action: 'stop' });
-        }
-    };
-
-    // Optionally, you can trigger playDemoTTS() from a button or event for demo.
-    // playDemoTTS();
-
-    playBtn.onclick = async () => {
-        if (!currentState) return;
-        if (currentState.isPlaying && !currentState.isPaused) {
-            // Pause
-            await chrome.runtime.sendMessage({ action: 'pause' });
-        } else if (currentState.isPaused) {
-            // Resume
-            await chrome.runtime.sendMessage({ action: 'resume' });
-        } else {
-            // Play (resume or play current text)
-            if (currentState.currentText) {
-                await chrome.runtime.sendMessage({ action: 'speak', text: currentState.currentText });
-            }
-        }
-    };
-    stopBtn.onclick = async () => {
-        await chrome.runtime.sendMessage({ action: 'stop' });
-    };
-    clearBtn.onclick = async () => {
-        // Clear the queue and stop playback
-        await chrome.runtime.sendMessage({ action: 'stop' });
-    };
-});
-
-function updateUI(settings) {
-    // Update sliders
-    const rateSlider = document.getElementById('rate-slider');
-    const pitchSlider = document.getElementById('pitch-slider');
-    const volumeSlider = document.getElementById('volume-slider');
-    if (rateSlider) rateSlider.value = settings.rate || 1.0;
-    if (pitchSlider) pitchSlider.value = settings.pitch || 1.0;
-    if (volumeSlider) volumeSlider.value = settings.volume || 1.0;
-
-    // Update value displays
-    const rateValue = document.getElementById('rate-value');
-    const pitchValue = document.getElementById('pitch-value');
-    const volumeValue = document.getElementById('volume-value');
-    if (rateValue) rateValue.textContent = `${settings.rate || 1.0}x`;
-    if (pitchValue) pitchValue.textContent = settings.pitch || 1.0;
-    if (volumeValue) volumeValue.textContent = `${Math.round((settings.volume || 1.0) * 100)}%`;
-
-    // Update status
-    const statusText = document.getElementById('status-text');
-    const toggleButton = document.getElementById('toggle-btn');
-    if (!statusText) {
-        console.warn("Element with id 'status-text' not found in DOM.");
-    }
-    if (!toggleButton) {
-        console.warn("Element with id 'toggle-btn' not found in DOM.");
-    }
-    if (statusText && toggleButton) {
-        if (settings.enabled !== false) {
-            statusText.textContent = 'Active';
-            statusText.className = 'status-active';
-            toggleButton.textContent = 'Disable';
-            toggleButton.className = 'btn btn-primary';
-        } else {
-            statusText.textContent = 'Disabled';
-            statusText.className = 'status-inactive';
-            toggleButton.textContent = 'Enable';
-            toggleButton.className = 'btn btn-secondary';
-        }
-    }
 }
 
-function setupEventListeners() {
-    // Rate slider
-    document.getElementById('rate-slider').addEventListener('input', async (e) => {
-        const value = parseFloat(e.target.value);
-        document.getElementById('rate-value').textContent = `${value}x`;
-        await updateSetting('rate', value);
-    });
-
-    // Pitch slider
-    document.getElementById('pitch-slider').addEventListener('input', async (e) => {
-        const value = parseFloat(e.target.value);
-        document.getElementById('pitch-value').textContent = value;
-        await updateSetting('pitch', value);
-    });
-
-    // Volume slider
-    document.getElementById('volume-slider').addEventListener('input', async (e) => {
-        const value = parseFloat(e.target.value);
-        document.getElementById('volume-value').textContent = `${Math.round(value * 100)}%`;
-        await updateSetting('volume', value);
-    });
-}
-
+// Helper Functions
 async function updateSetting(key, value) {
     const data = await chrome.storage.sync.get(['settings']);
     const settings = data.settings || {};
     settings[key] = value;
-
     await chrome.storage.sync.set({ settings });
-}
-
-async function loadRecentNotes() {
-    try {
-        const isAuthenticated = await ApiClient.isAuthenticated();
-        if (!isAuthenticated) {
-            await clearAuth();
-            authState.loggedIn = false;
-            authState.username = null;
-        }
-        const notes = await apiClient.getNotes();
-        const recentNotes = notes.slice(0, 5); // Show last 5 notes
-        const notesListEl = document.getElementById('notes-list');
-        notesListEl.innerHTML = '';
-        if (recentNotes.length === 0) {
-            notesListEl.innerHTML = '<p class="no-notes">No notes yet. Select text on any page and save!</p>';
-            return;
-        }
-        recentNotes.forEach(note => {
-            const noteEl = document.createElement('div');
-            noteEl.className = 'note-item';
-            noteEl.innerHTML = `
-              <p class="note-content">${truncateText(note.content, 100)}</p>
-              <p class="note-source">${note.source_title || 'Untitled'}</p>
-              <p class="note-date">${formatDate(note.created_at)}</p>
-              <button class="delete-note-btn" data-id="${note.id}">Delete</button>
-            `;
-            notesListEl.appendChild(noteEl);
-        });
-        // Add delete handlers
-        document.querySelectorAll('.delete-note-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const noteId = e.target.getAttribute('data-id');
-                try {
-                    await apiClient.deleteNote(noteId);
-                    loadRecentNotes();
-                } catch (err) {
-                    alert('Failed to delete note');
-                }
-            });
-        });
-    } catch (error) {
-        console.error('Failed to load notes:', error);
-    }
 }
 
 function truncateText(text, maxLength) {
@@ -508,5 +383,15 @@ function truncateText(text, maxLength) {
 
 function formatDate(dateString) {
     const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+    return date.toLocaleDateString();
+}
+
+function escapeQuotes(str) {
+    return str.replace(/'/g, "\\'").replace(/"/g, '\\"');
 }

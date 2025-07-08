@@ -29,12 +29,29 @@ chrome.runtime.onInstalled.addListener(() => {
         }
     });
 
+    // Create parent menu
     chrome.contextMenus.create({
-        id: 'save-to-tts',
-        title: 'Save to TTS Notes',
+        id: 'study-assistant',
+        title: 'Study Assistant',
         contexts: ['selection']
     });
-    console.log('Default settings initialized');
+
+    // Create sub-menu items
+    chrome.contextMenus.create({
+        id: 'save-note',
+        parentId: 'study-assistant',
+        title: '📝 Save as Note',
+        contexts: ['selection']
+    });
+
+    chrome.contextMenus.create({
+        id: 'play-text',
+        parentId: 'study-assistant',
+        title: '🔊 Play Text',
+        contexts: ['selection']
+    });
+
+    console.log('Default settings and context menu initialized');
 });
 
 // Message listener for communication with content script
@@ -307,28 +324,64 @@ async function updateNoteBadge() {
 }
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId === 'save-to-tts' && info.selectionText) {
-        const noteData = {
-            content: info.selectionText,
-            source_url: tab.url,
-            source_title: tab.title
-        };
-        try {
-            const isAuthenticated = await ApiClient.isAuthenticated();
-            if (!isAuthenticated) {
-                chrome.action.openPopup();
-                return;
+    if (!info.selectionText) return;
+
+    switch (info.menuItemId) {
+        case 'save-note':
+            const noteData = {
+                content: info.selectionText,
+                source_url: tab.url,
+                source_title: tab.title
+            };
+
+            try {
+                const isAuthenticated = await ApiClient.isAuthenticated();
+                if (!isAuthenticated) {
+                    chrome.notifications.create({
+                        type: 'basic',
+                        iconUrl: 'icons/icon-48.png',
+                        title: 'Login Required',
+                        message: 'Please login to save notes. Click the extension icon.'
+                    });
+                    return;
+                }
+
+                await apiClient.createNote(noteData);
+
+                chrome.notifications.create({
+                    type: 'basic',
+                    iconUrl: 'icons/icon-48.png',
+                    title: 'Note Saved!',
+                    message: 'Your note has been saved successfully.'
+                });
+
+                updateNoteBadge();
+            } catch (error) {
+                console.error('Failed to save note:', error);
             }
-            await apiClient.createNote(noteData);
-            chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icons/icon-48.png',
-                title: 'Note Saved!',
-                message: 'Selected text has been saved to your notes.'
+            break;
+
+        case 'play-text':
+            // Auto-save when playing
+            try {
+                const isAuthenticated = await ApiClient.isAuthenticated();
+                if (isAuthenticated) {
+                    await apiClient.createNote({
+                        content: info.selectionText,
+                        source_url: tab.url,
+                        source_title: tab.title
+                    });
+                    updateNoteBadge();
+                }
+            } catch (error) {
+                console.error('Failed to save note:', error);
+            }
+
+            // Send text to content script to play
+            chrome.tabs.sendMessage(tab.id, {
+                action: 'playText',
+                text: info.selectionText
             });
-            updateNoteBadge();
-        } catch (error) {
-            console.error('Failed to save note:', error);
-        }
+            break;
     }
 });

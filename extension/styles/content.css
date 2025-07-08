@@ -207,3 +207,39 @@
     background: #e5e7eb;
     color: #374151;
   }
+
+/* Action button for text selection */
+.tts-action-button {
+    position: absolute;
+    z-index: 2147483647; /* Maximum z-index */
+    background: transparent;
+    padding: 0;
+}
+
+.tts-action-button.hidden {
+    display: none;
+}
+
+.tts-btn {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.tts-btn:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.tts-btn:active {
+    transform: translateY(0);
+}

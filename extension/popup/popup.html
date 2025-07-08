@@ -7,59 +7,52 @@
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="bg-gradient">
-        <div class="popup-container">
-            <header class="popup-header">
-                <div class="header-content">
-                    <div class="header-title">
-                        <span class="logo">🎧</span>
-                        <span>Study Assistant</span>
-                    </div>
-                    <div class="header-subtitle">Listen while you learn</div>
-                    <div class="header-auth" id="auth-header">
-                        <button class="header-btn" id="login-btn">Login</button>
-                        <button class="header-btn" id="signup-btn">Sign Up</button>
-                    </div>
+    <div class="popup-container">
+        <header class="popup-header">
+            <div class="header-content">
+                <div class="header-title">
+                    <span class="logo">📚</span>
+                    <span>Study Assistant</span>
                 </div>
-            </header>
-            <main class="popup-main">
-                <div class="status-row">
-                    <span class="status-dot"></span>
-                    <span class="status-text" id="status-text">Active</span>
+                <div class="header-auth" id="auth-header">
+                    <button class="header-btn" id="login-btn">Login</button>
+                    <button class="header-btn" id="signup-btn">Sign Up</button>
                 </div>
-                <div class="sliders">
-                    <div class="slider-group">
-                        <label for="volume-slider">Volume</label>
-                        <input type="range" id="volume-slider" min="0" max="1" step="0.1" value="1">
-                        <span class="slider-value" id="volume-value">100%</span>
-                    </div>
-                    <div class="slider-group">
-                        <label for="pitch-slider">Pitch</label>
-                        <input type="range" id="pitch-slider" min="0.5" max="2" step="0.1" value="1">
-                        <span class="slider-value" id="pitch-value">1.0</span>
-                    </div>
-                    <div class="slider-group">
-                        <label for="rate-slider">Speed</label>
-                        <input type="range" id="rate-slider" min="0.5" max="3" step="0.1" value="1">
-                        <span class="slider-value" id="rate-value">1.0x</span>
-                    </div>
+            </div>
+        </header>
+        
+        <main class="popup-main">
+            <!-- Player Controls (shown when playing) -->
+            <div id="player-controls" class="player-controls hidden">
+                <button id="play-pause-btn" class="control-btn">▶️ Play</button>
+                <button id="stop-btn" class="control-btn">⏹️ Stop</button>
+                <div id="now-playing" class="now-playing"></div>
+            </div>
+            
+            <!-- Speed Control -->
+            <div class="speed-control">
+                <label for="rate-slider">Speed</label>
+                <input type="range" id="rate-slider" min="0.5" max="3" step="0.1" value="1">
+                <span class="slider-value" id="rate-value">1.0x</span>
+            </div>
+            
+            <!-- Notes Section -->
+            <div id="notes-section" class="notes-section">
+                <h3>Notes from this site</h3>
+                <div id="notes-carousel" class="notes-carousel">
+                    <!-- Note cards will be inserted here -->
                 </div>
-                <div id="tts-controls" class="button-grid">
-                    <button class="grid-btn play-btn" id="play-btn">Play</button>
-                    <button class="grid-btn pause-btn" id="pause-btn">Pause</button>
-                    <button class="grid-btn resume-btn" id="resume-btn">Resume</button>
-                    <button class="grid-btn stop-btn" id="stop-btn">Stop</button>
-                    <button class="grid-btn clear-btn" id="clear-btn" disabled>Clear Queue</button>
-                </div>
-                <button class="tts-toggle-btn" id="toggle-btn">Disable TTS</button>
-            </main>
-        </div>
+                <button id="view-all-notes" class="btn-text">View All Notes →</button>
+            </div>
+            
+            <!-- Empty State -->
+            <div id="empty-state" class="empty-state hidden">
+                <p>No notes from this site yet.</p>
+                <p class="hint">Right-click selected text → Study Assistant → Save Note</p>
+            </div>
+        </main>
     </div>
-    <div id="notes-section" class="notes-section">
-        <h3>Recent Notes</h3>
-        <div id="notes-list" class="notes-list"></div>
-        <button id="view-all-notes" class="btn btn-secondary">View All Notes</button>
-    </div>
+    
     <!-- Login Modal -->
     <div class="modal-overlay" id="login-modal-overlay">
         <div class="modal-box">
@@ -78,6 +71,7 @@
             </form>
         </div>
     </div>
+    
     <!-- Signup Modal -->
     <div class="modal-overlay" id="signup-modal-overlay">
         <div class="modal-box">
@@ -100,6 +94,7 @@
             </form>
         </div>
     </div>
+    
     <script type="module" src="popup.js"></script>
 </body>
 </html>

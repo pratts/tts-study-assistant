@@ -3,14 +3,8 @@ console.log('TTS Study Assistant - Content script loaded');
 
 // State management
 let isEnabled = true;
-// On load, sync TTS enabled state from storage
-chrome.storage.sync.get(['tts_enabled'], (data) => {
-    isEnabled = data.tts_enabled !== false; // default to true
-});
 let selectedText = '';
-let selectionTimeout = null;
-let tooltip = null;
-let queueDialog = null;
+let actionButton = null;
 
 // Initialize
 (async function init() {
@@ -27,38 +21,133 @@ let queueDialog = null;
     // Setup event listeners
     setupEventListeners();
 
-    // Create UI elements
-    createTooltip();
-    createQueueDialog();
+    // Create action button for PDFs and iframes
+    createActionButton();
 })();
+
+// Create minimal action button
+function createActionButton() {
+    actionButton = document.createElement('div');
+    actionButton.id = 'tts-action-button';
+    actionButton.className = 'tts-action-button hidden';
+
+    // Use text instead of emoji
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save & Play';
+    saveBtn.className = 'tts-btn';
+
+    actionButton.appendChild(saveBtn);
+
+    saveBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+
+        if (selectedText) {
+            // Save note first
+            const saveResponse = await chrome.runtime.sendMessage({
+                action: 'saveNote',
+                noteData: {
+                    content: selectedText,
+                    source_url: window.location.href,
+                    source_title: document.title || 'PDF Document'
+                }
+            });
+
+            // Then play the selected text (not the button text!)
+            await chrome.runtime.sendMessage({
+                action: 'speak',
+                text: selectedText,  // This is the important part
+                options: {}
+            });
+
+            hideActionButton();
+
+            // Clear selection
+            window.getSelection().removeAllRanges();
+        }
+    });
+
+    document.body.appendChild(actionButton);
+}
+
+// Show action button near selection
+function showActionButton(x, y) {
+    if (!actionButton || !isEnabled) return;
+
+    // Ensure button stays within viewport
+    const buttonWidth = 100;
+    const buttonHeight = 35;
+
+    let left = x + 10;
+    let top = y - buttonHeight - 5;
+
+    // Adjust if too close to edges
+    if (left + buttonWidth > window.innerWidth) {
+        left = window.innerWidth - buttonWidth - 10;
+    }
+
+    if (top < 10) {
+        top = y + 20;
+    }
+
+    actionButton.style.left = `${left}px`;
+    actionButton.style.top = `${top}px`;
+    actionButton.classList.remove('hidden');
+}
+
+// Hide action button
+function hideActionButton() {
+    if (actionButton) {
+        actionButton.classList.add('hidden');
+    }
+}
 
 // Setup event listeners
 function setupEventListeners() {
     // Mouse selection
     document.addEventListener('mouseup', handleMouseUp);
-    document.addEventListener('mousedown', handleMouseDown);
-
-    // Touch selection (for tablets)
-    document.addEventListener('touchend', handleMouseUp);
+    document.addEventListener('mousedown', (e) => {
+        // Don't hide if clicking on the button itself
+        if (!actionButton?.contains(e.target)) {
+            hideActionButton();
+        }
+    });
 
     // Selection change
-    document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('selectionchange', () => {
+        const selection = window.getSelection();
+        const text = selection.toString().trim();
+
+        if (text.length === 0) {
+            hideActionButton();
+            selectedText = '';
+        }
+    });
 
     // Listen for messages from background script
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'speakSelection') {
-            speakSelectedText();
+        if (request.action === 'getSelection') {
+            const selection = window.getSelection();
+            const text = selection.toString().trim();
+            sendResponse({ text: text });
+            return true;
+        }
+
+        if (request.action === 'playText') {
+            chrome.runtime.sendMessage({
+                action: 'speak',
+                text: request.text,
+                options: {}
+            });
         }
     });
 
     // Storage change listener for settings
     chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'sync' && changes.tts_enabled) {
-            isEnabled = changes.tts_enabled.newValue !== false;
+        if (namespace === 'sync' && changes.settings) {
+            const newSettings = changes.settings.newValue;
+            isEnabled = newSettings.enabled !== false;
             if (!isEnabled) {
-                hideTooltip();
-                // Clear the queue and stop audio globally
-                chrome.runtime.sendMessage({ action: 'stop' });
+                hideActionButton();
             }
         }
     });
@@ -66,312 +155,26 @@ function setupEventListeners() {
 
 // Handle mouse up event
 function handleMouseUp(event) {
-    // Clear any existing timeout
-    if (selectionTimeout) {
-        clearTimeout(selectionTimeout);
+    // Skip if clicking on our button
+    if (actionButton?.contains(event.target)) {
+        return;
     }
-
-    // Check for text selection after a short delay
-    selectionTimeout = setTimeout(() => {
-        checkForSelection(event);
-    }, 10);
-}
-
-// Handle mouse down event
-function handleMouseDown(event) {
-    // Hide tooltip when user clicks
-    if (tooltip && !tooltip.contains(event.target)) {
-        hideTooltip();
-    }
-
-    // Hide queue dialog when user clicks outside
-    if (queueDialog && !queueDialog.contains(event.target)) {
-        hideQueueDialog();
-    }
-}
-
-// Check for text selection
-function checkForSelection(event) {
-    const selection = window.getSelection();
-    const text = selection.toString().trim();
-
-    if (text.length > 0 && isEnabled) {
-        selectedText = text;
-        showTooltip(selection);
-    } else {
-        hideTooltip();
-    }
-}
-
-// Handle selection change
-function handleSelectionChange() {
-    const selection = window.getSelection();
-    const text = selection.toString().trim();
-
-    if (text.length === 0) {
-        hideTooltip();
-    }
-}
-
-// Create tooltip element
-function createTooltip() {
-    // Create container
-    tooltip = document.createElement('div');
-    tooltip.id = 'tts-tooltip';
-    tooltip.className = 'tts-tooltip hidden';
-
-    // Create speak button
-    const speakButton = document.createElement('button');
-    speakButton.className = 'tts-speak-button';
-    speakButton.innerHTML = '🔊';
-    speakButton.title = 'Speak selected text (Ctrl+Shift+S)';
-    speakButton.addEventListener('click', () => { if (isEnabled) speakSelectedText(); });
-
-
-    // ADD SAVE BUTTON
-    const saveButton = document.createElement('button');
-    saveButton.className = 'tts-save-button';
-    saveButton.innerHTML = '📝';
-    saveButton.title = 'Save as note';
-    saveButton.addEventListener('click', () => { if (isEnabled) saveSelectedNote(); });
-
-    tooltip.appendChild(speakButton);
-    tooltip.appendChild(saveButton);
-    document.body.appendChild(tooltip);
-}
-
-// Create queue dialog
-function createQueueDialog() {
-    queueDialog = document.createElement('div');
-    queueDialog.id = 'tts-queue-dialog';
-    queueDialog.className = 'tts-queue-dialog hidden';
-    queueDialog.innerHTML = `
-    <div class="tts-dialog-content">
-      <h3>Text already playing</h3>
-      <p>What would you like to do with the new selection?</p>
-      <div class="tts-dialog-buttons">
-        <button id="tts-append">Add to Queue</button>
-        <button id="tts-replace">Replace Current</button>
-        <button id="tts-cancel">Cancel</button>
-      </div>
-    </div>
-  `;
-
-    document.body.appendChild(queueDialog);
-
-    // Add event listeners
-    document.getElementById('tts-append').addEventListener('click', () => {
-        appendToQueue();
-    });
-
-    document.getElementById('tts-replace').addEventListener('click', () => {
-        replaceQueue();
-    });
-
-    document.getElementById('tts-cancel').addEventListener('click', () => {
-        hideQueueDialog();
-    });
-}
-
-// Show tooltip near selection
-function showTooltip(selection) {
-    if (!isEnabled) return;
-    if (!tooltip || selection.rangeCount === 0) return;
-
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-
-    // Position tooltip above selection
-    const tooltipHeight = 40;
-    const padding = 5;
-
-    tooltip.style.left = `${rect.left + rect.width / 2}px`;
-    tooltip.style.top = `${rect.top + window.scrollY - tooltipHeight - padding}px`;
-
-    // Show tooltip
-    tooltip.classList.remove('hidden');
-
-    // Ensure tooltip is within viewport
-    const tooltipRect = tooltip.getBoundingClientRect();
-    if (tooltipRect.left < 0) {
-        tooltip.style.left = '10px';
-    } else if (tooltipRect.right > window.innerWidth) {
-        tooltip.style.left = `${window.innerWidth - tooltipRect.width - 10}px`;
-    }
-
-    if (tooltipRect.top < 0) {
-        // Position below selection if no room above
-        tooltip.style.top = `${rect.bottom + window.scrollY + padding}px`;
-    }
-}
-
-// Hide tooltip
-function hideTooltip() {
-    if (tooltip) {
-        tooltip.classList.add('hidden');
-    }
-}
-
-// Show queue dialog
-function showQueueDialog() {
-    if (queueDialog) {
-        queueDialog.classList.remove('hidden');
-    }
-}
-
-// Hide queue dialog
-function hideQueueDialog() {
-    if (queueDialog) {
-        queueDialog.classList.add('hidden');
-    }
-}
-
-// Speak selected text
-let ttsRequestInProgress = false;
-async function speakSelectedText() {
-    if (!isEnabled) return;
-
-    if (!selectedText) {
-        const selection = window.getSelection();
-        selectedText = selection.toString().trim();
-    }
-
-    if (selectedText) {
-        try {
-            // Prevent double-speaking: only send if not already in progress
-            if (ttsRequestInProgress) return;
-            ttsRequestInProgress = true;
-            // Send to background script
-            const response = await chrome.runtime.sendMessage({
-                action: 'speak',
-                text: selectedText,
-                options: {}
-            });
-            // Handle queue decision
-            if (response.status === 'queue_decision_needed') {
-                showQueueDialog();
-            } else {
-                // Hide tooltip after speaking starts
-                hideTooltip();
-            }
-            await saveNoteInBackground(selectedText);
-
-            // Clear selectedText to avoid repeat
-            selectedText = '';
-            setTimeout(() => { ttsRequestInProgress = false; }, 1000);
-        } catch (e) {
-            console.error('Error sending message:', e);
-            ttsRequestInProgress = false;
-        }
-    }
-}
-
-// Append to queue
-async function appendToQueue() {
-    if (selectedText) {
-        await chrome.runtime.sendMessage({
-            action: 'appendToQueue',
-            text: selectedText
-        });
-
-        hideQueueDialog();
-        hideTooltip();
-    }
-}
-
-// Replace queue
-async function replaceQueue() {
-    if (selectedText) {
-        await chrome.runtime.sendMessage({
-            action: 'replaceQueue',
-            text: selectedText
-        });
-
-        hideQueueDialog();
-        hideTooltip();
-    }
-}
-
-// Utility function to check if element is editable
-function isEditableElement(element) {
-    const editableTags = ['INPUT', 'TEXTAREA'];
-
-    if (editableTags.includes(element.tagName)) {
-        return true;
-    }
-
-    if (element.contentEditable === 'true') {
-        return true;
-    }
-
-    return false;
-}
-
-async function saveNoteInBackground(text) {
-    try {
-        const response = await chrome.runtime.sendMessage({
-            action: 'saveNote',
-            noteData: {
-                content: text,
-                source_url: window.location.href,
-                source_title: document.title
-            }
-        });
-
-        if (response.success) {
-            showNotification('Note saved!');
-        } else if (response.error === 'NOT_AUTHENTICATED') {
-            showAuthPrompt();
-        }
-    } catch (error) {
-        console.error('Failed to save note:', error);
-    }
-}
-
-async function saveSelectedNote() {
-    if (!isEnabled) return;
-    if (!selectedText) {
-        const selection = window.getSelection();
-        selectedText = selection.toString().trim();
-    }
-
-    if (selectedText) {
-        await saveNoteInBackground(selectedText);
-        hideTooltip();
-    }
-}
-
-function showNotification(message) {
-    const notification = document.createElement('div');
-    notification.className = 'tts-notification';
-    notification.textContent = message;
-    document.body.appendChild(notification);
 
     setTimeout(() => {
-        notification.remove();
-    }, 3000);
-}
+        const selection = window.getSelection();
+        const text = selection.toString().trim();
 
-// Show auth prompt
-function showAuthPrompt() {
-    const prompt = document.createElement('div');
-    prompt.className = 'tts-auth-prompt';
-    prompt.innerHTML = `
-    <div class="tts-auth-content">
-      <p>Please login to save notes</p>
-      <button id="tts-login-btn">Login</button>
-      <button id="tts-close-btn">Close</button>
-    </div>
-  `;
+        if (text.length > 0 && isEnabled) {
+            selectedText = text;
 
-    document.body.appendChild(prompt);
-
-    document.getElementById('tts-login-btn').addEventListener('click', () => {
-        chrome.runtime.sendMessage({ action: 'openPopup' });
-        prompt.remove();
-    });
-
-    document.getElementById('tts-close-btn').addEventListener('click', () => {
-        prompt.remove();
-    });
+            // Always show button for any selection (not just PDFs)
+            // This ensures it works everywhere
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            showActionButton(
+                rect.left + rect.width / 2,
+                rect.top + window.scrollY
+            );
+        }
+    }, 10);
 }
