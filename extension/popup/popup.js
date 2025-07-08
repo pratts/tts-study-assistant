@@ -1,5 +1,5 @@
 import { ApiClient } from '../js/api-client.js';
-import { API_URL } from '../js/config.js';
+import { API_URL, DASHBOARD_URL } from '../js/config.js';
 const apiClient = new ApiClient();
 
 let currentState = null;
@@ -290,7 +290,7 @@ function setupEventListeners() {
 
     // View all notes
     document.getElementById('view-all-notes').addEventListener('click', () => {
-        chrome.tabs.create({ url: 'http://localhost:5173/' });
+        chrome.tabs.create({ url: `${DASHBOARD_URL}/notes` });
     });
 
     // Listen for state updates
@@ -429,6 +429,6 @@ privacyBtn.style.color = '#2563eb';
 privacyBtn.style.cursor = 'pointer';
 privacyBtn.style.fontSize = '14px';
 privacyBtn.onclick = () => {
-    window.open('http://localhost:5173/privacy-policy', '_blank');
+    window.open(`${DASHBOARD_URL}/privacy-policy`, '_blank');
 };
 document.body.appendChild(privacyBtn);
