@@ -53,7 +53,7 @@ function updateAuthHeader() {
 
         // Add event listeners after creating elements
         document.getElementById('profile-btn').addEventListener('click', () => {
-            chrome.tabs.create({ url: 'https://your-dashboard-url.com/profile' });
+            chrome.tabs.create({ url: 'http://localhost:5173/' });
         });
 
         document.getElementById('logout-btn').addEventListener('click', async () => {
@@ -290,7 +290,7 @@ function setupEventListeners() {
 
     // View all notes
     document.getElementById('view-all-notes').addEventListener('click', () => {
-        chrome.tabs.create({ url: 'https://your-dashboard-url.com/notes' });
+        chrome.tabs.create({ url: 'http://localhost:5173/' });
     });
 
     // Listen for state updates
