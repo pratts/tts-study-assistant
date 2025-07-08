@@ -89,6 +89,7 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	user := protected.Group("/user")
 	user.Get("/profile", userHandler.GetProfile)
 	user.Put("/profile", userHandler.UpdateProfile)
+	user.Put("/password", userHandler.UpdatePassword)
 }
 
 func customErrorHandler(c *fiber.Ctx, err error) error {

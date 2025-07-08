@@ -88,3 +88,15 @@ func (s *UserService) UpdateProfile(userID string, req *UpdateProfileRequest) (*
 
 	return response, nil
 }
+
+func (s *UserService) UpdatePassword(userID, oldPassword, newPassword string) error {
+	var user models.User
+	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
+		return err
+	}
+	if user.Password != oldPassword {
+		return errors.New("incorrect password")
+	}
+	user.Password = newPassword
+	return s.db.Save(&user).Error
+}
