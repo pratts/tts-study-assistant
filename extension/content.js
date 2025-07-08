@@ -3,6 +3,10 @@ console.log('TTS Study Assistant - Content script loaded');
 
 // State management
 let isEnabled = true;
+// On load, sync TTS enabled state from storage
+chrome.storage.sync.get(['tts_enabled'], (data) => {
+    isEnabled = data.tts_enabled !== false; // default to true
+});
 let selectedText = '';
 let selectionTimeout = null;
 let tooltip = null;
@@ -49,10 +53,13 @@ function setupEventListeners() {
 
     // Storage change listener for settings
     chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'sync' && changes.settings) {
-            const newSettings = changes.settings.newValue;
-            isEnabled = newSettings.enabled !== false;
-            console.log('Settings updated, enabled:', isEnabled);
+        if (namespace === 'sync' && changes.tts_enabled) {
+            isEnabled = changes.tts_enabled.newValue !== false;
+            if (!isEnabled) {
+                hideTooltip();
+                // Clear the queue and stop audio globally
+                chrome.runtime.sendMessage({ action: 'stop' });
+            }
         }
     });
 }
@@ -118,7 +125,7 @@ function createTooltip() {
     speakButton.className = 'tts-speak-button';
     speakButton.innerHTML = '🔊';
     speakButton.title = 'Speak selected text (Ctrl+Shift+S)';
-    speakButton.addEventListener('click', speakSelectedText);
+    speakButton.addEventListener('click', () => { if (isEnabled) speakSelectedText(); });
 
 
     // ADD SAVE BUTTON
@@ -126,7 +133,7 @@ function createTooltip() {
     saveButton.className = 'tts-save-button';
     saveButton.innerHTML = '📝';
     saveButton.title = 'Save as note';
-    saveButton.addEventListener('click', saveSelectedNote);
+    saveButton.addEventListener('click', () => { if (isEnabled) saveSelectedNote(); });
 
     tooltip.appendChild(speakButton);
     tooltip.appendChild(saveButton);
@@ -168,6 +175,7 @@ function createQueueDialog() {
 
 // Show tooltip near selection
 function showTooltip(selection) {
+    if (!isEnabled) return;
     if (!tooltip || selection.rangeCount === 0) return;
 
     const range = selection.getRangeAt(0);
@@ -221,10 +229,7 @@ function hideQueueDialog() {
 // Speak selected text
 let ttsRequestInProgress = false;
 async function speakSelectedText() {
-    if (!isEnabled) {
-        console.log('TTS is disabled');
-        return;
-    }
+    if (!isEnabled) return;
 
     if (!selectedText) {
         const selection = window.getSelection();
@@ -324,6 +329,7 @@ async function saveNoteInBackground(text) {
 }
 
 async function saveSelectedNote() {
+    if (!isEnabled) return;
     if (!selectedText) {
         const selection = window.getSelection();
         selectedText = selection.toString().trim();
