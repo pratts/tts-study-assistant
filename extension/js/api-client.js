@@ -1,10 +1,11 @@
 // extension/js/api-client.js
 
 import { AuthManager } from './auth-manager.js';
+import { API_URL } from './config.js';
 
 export class ApiClient {
     constructor() {
-        this.API_URL = 'http://localhost:3000/api/v1'; // Update for production
+        this.API_URL = API_URL
         this.authManager = new AuthManager();
     }
 

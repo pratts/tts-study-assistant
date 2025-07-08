@@ -1,4 +1,5 @@
 import { ApiClient } from '../js/api-client.js';
+import { API_URL } from '../js/config.js';
 const apiClient = new ApiClient();
 
 let currentState = null;
@@ -7,7 +8,7 @@ let authState = {
     user: null
 };
 
-const API_BASE = 'http://localhost:3000/api/v1';
+const API_BASE = API_URL;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
