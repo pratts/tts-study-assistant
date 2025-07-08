@@ -1,20 +1,36 @@
-import React, { useState } from 'react';
-import { Box, Heading, Input, Button, VStack, Text, Alert, AlertIcon } from '@chakra-ui/react';
-import { updatePassword } from '../api/apiClient';
+import React, { useState, useEffect } from 'react';
+import { Box, Heading, Input, Button, VStack, Text, Alert, AlertIcon, Spinner } from '@chakra-ui/react';
+import { updatePassword, getUserProfile } from '../api/apiClient';
 import { sha256 } from '../utils/hash';
+import { useAuth } from '../context/AuthContext';
 
 export default function Profile() {
-  // Placeholder user data
-  const [name] = useState('John Doe');
-  const [email] = useState('john@example.com');
+  const { user } = useAuth();
+  const [name, setName] = useState(user?.name || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(!user);
 
-  const handlePasswordUpdate = async (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!user) {
+      setProfileLoading(true);
+      getUserProfile().then((profile: { name: string; email: string }) => {
+        setName(profile.name);
+        setEmail(profile.email);
+        setProfileLoading(false);
+      }).catch((e: Error) => {
+        setError(e.message || 'Failed to load profile');
+        setProfileLoading(false);
+      });
+    }
+  }, [user]);
+
+  const handlePasswordUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setMessage('');
     setError('');
@@ -36,6 +52,8 @@ export default function Profile() {
     }
     setLoading(false);
   };
+
+  if (profileLoading) return <Spinner size="lg" mt={8} />;
 
   return (
     <Box>

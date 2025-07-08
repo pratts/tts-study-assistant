@@ -127,4 +127,10 @@ export async function updatePassword(oldPassword: string, newPassword: string) {
         body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
     });
     return true;
+}
+
+// Get user profile: GET /user/profile
+export async function getUserProfile() {
+    const data = await fetchWithAuth(`${API_URL}/user/profile`);
+    return data.data || data;
 } 
