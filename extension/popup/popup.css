@@ -359,3 +359,10 @@ body {
 .modal-btn:hover {
     background: #1d4ed8;
 }
+
+.note-source {
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 4px;
+    font-style: italic;
+}

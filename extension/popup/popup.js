@@ -129,24 +129,41 @@ async function loadSiteNotes() {
         // Get current tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const currentUrl = new URL(tab.url);
-        const siteDomain = currentUrl.hostname;
+
+        // Extract main domain (e.g., "edmingle.com" from "app.edmingle.com")
+        const getMainDomain = (hostname) => {
+            const parts = hostname.split('.');
+            if (parts.length > 2) {
+                // Handle subdomains - get last two parts for most domains
+                // This handles: app.edmingle.com -> edmingle.com
+                return parts.slice(-2).join('.');
+            }
+            return hostname;
+        };
+
+        const currentDomain = getMainDomain(currentUrl.hostname);
 
         // Get all notes
         const notes = await apiClient.getNotes();
 
-        // Filter notes from current site
+        // Filter notes from current domain (including all subdomains)
         const siteNotes = notes.filter(note => {
             if (!note.source_url) return false;
             try {
                 const noteUrl = new URL(note.source_url);
-                return noteUrl.hostname === siteDomain;
+                const noteDomain = getMainDomain(noteUrl.hostname);
+                return noteDomain === currentDomain;
             } catch {
                 return false;
             }
         }).slice(0, 10);
 
-        console.log('all notes: ', notes);
-        console.log('site notes: ', siteNotes);
+        // Update the section title to show domain
+        const sectionTitle = document.querySelector('#notes-section h3');
+        if (sectionTitle) {
+            sectionTitle.textContent = `Notes from ${currentDomain}`;
+        }
+
         displayNotes(siteNotes);
     } catch (error) {
         console.error('Failed to load notes:', error);
@@ -181,6 +198,11 @@ function displayNotes(notes) {
         noteContent.className = 'note-content';
         noteContent.textContent = truncateText(note.content, 120);
 
+        // Show source info
+        const noteSource = document.createElement('div');
+        noteSource.className = 'note-source';
+        noteSource.textContent = note.source_title || 'Untitled';
+
         const noteDate = document.createElement('div');
         noteDate.className = 'note-date';
         noteDate.textContent = formatDate(note.created_at);
@@ -214,6 +236,7 @@ function displayNotes(notes) {
         noteActions.appendChild(deleteBtn);
 
         noteCard.appendChild(noteContent);
+        noteCard.appendChild(noteSource);
         noteCard.appendChild(noteDate);
         noteCard.appendChild(noteActions);
 

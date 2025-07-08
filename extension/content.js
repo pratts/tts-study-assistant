@@ -42,26 +42,39 @@ function createActionButton() {
         e.stopPropagation();
 
         if (selectedText) {
-            // Save note first
+            // Determine the best URL to save
+            const pageUrl = getTruePageUrl();
+            const actualUrl = window.location.href;
+
+            // Construct a descriptive title
+            let title = document.title || 'PDF Document';
+            if (window.self !== window.top) {
+                title = `${title} (embedded)`;
+            }
+
+            // Save note with parent page URL if available
             const saveResponse = await chrome.runtime.sendMessage({
                 action: 'saveNote',
                 noteData: {
                     content: selectedText,
-                    source_url: window.location.href,
-                    source_title: document.title || 'PDF Document'
+                    source_url: pageUrl,  // Use parent page URL
+                    source_title: title,
+                    // Optionally store the actual PDF URL in a metadata field
+                    metadata: {
+                        actual_url: actualUrl,
+                        is_iframe: window.self !== window.top
+                    }
                 }
             });
 
-            // Then play the selected text (not the button text!)
+            // Then play the selected text
             await chrome.runtime.sendMessage({
                 action: 'speak',
-                text: selectedText,  // This is the important part
+                text: selectedText,
                 options: {}
             });
 
             hideActionButton();
-
-            // Clear selection
             window.getSelection().removeAllRanges();
         }
     });
@@ -177,4 +190,25 @@ function handleMouseUp(event) {
             );
         }
     }, 10);
+}
+
+function getTruePageUrl() {
+    try {
+        // If we're in an iframe, try to get parent URL
+        if (window.self !== window.top) {
+            // Try to access parent URL (may fail due to cross-origin)
+            try {
+                return window.top.location.href;
+            } catch (e) {
+                // Cross-origin iframe - use referrer as fallback
+                if (document.referrer) {
+                    return document.referrer;
+                }
+            }
+        }
+        // Not in iframe or can't access parent - use current URL
+        return window.location.href;
+    } catch (e) {
+        return window.location.href;
+    }
 }

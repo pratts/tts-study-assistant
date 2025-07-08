@@ -109,6 +109,10 @@
                     "source_title": {
                         "type": "string"
                     },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Arbitrary metadata for the note"
+                    },
                     "created_at": {
                         "type": "string",
                         "format": "date-time"
@@ -133,6 +137,10 @@
                     },
                     "source_title": {
                         "type": "string"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Arbitrary metadata for the note"
                     }
                 }
             },
@@ -147,6 +155,10 @@
                     },
                     "source_title": {
                         "type": "string"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Arbitrary metadata for the note"
                     }
                 }
             },

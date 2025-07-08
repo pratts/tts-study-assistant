@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -13,6 +14,7 @@ type Note struct {
 	Content     string    `gorm:"type:text;not null"`
 	SourceURL   string
 	SourceTitle string
+	Metadata    datatypes.JSON `gorm:"type:jsonb" json:"metadata,omitempty"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 
