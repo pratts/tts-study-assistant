@@ -418,3 +418,17 @@ function formatDate(dateString) {
 function escapeQuotes(str) {
     return str.replace(/'/g, "\\'").replace(/"/g, '\\"');
 }
+
+// Add privacy policy button at the end of the popup
+const privacyBtn = document.createElement('button');
+privacyBtn.textContent = '🔒 Privacy Policy';
+privacyBtn.style.marginTop = '16px';
+privacyBtn.style.background = 'none';
+privacyBtn.style.border = 'none';
+privacyBtn.style.color = '#2563eb';
+privacyBtn.style.cursor = 'pointer';
+privacyBtn.style.fontSize = '14px';
+privacyBtn.onclick = () => {
+    window.open('http://localhost:5173/privacy-policy', '_blank');
+};
+document.body.appendChild(privacyBtn);
