@@ -80,6 +80,7 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	notes := protected.Group("/notes")
 	notes.Get("/", notesHandler.GetNotes)
 	notes.Post("/", notesHandler.CreateNote)
+	notes.Get("/stats", notesHandler.GetNotesStats)
 	notes.Get("/:id", notesHandler.GetNote)
 	notes.Put("/:id", notesHandler.UpdateNote)
 	notes.Delete("/:id", notesHandler.DeleteNote)

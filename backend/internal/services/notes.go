@@ -44,6 +44,11 @@ type NoteResponse struct {
 	UpdatedAt   string         `json:"updated_at"`
 }
 
+type NotesStats struct {
+	Domain string `json:"domain"`
+	Count  int    `json:"count"`
+}
+
 func NewNotesService() *NotesService {
 	return &NotesService{
 		db: database.DB,
@@ -224,4 +229,18 @@ func (s *NotesService) DeleteNote(noteID, userID string) error {
 	}
 
 	return nil
+}
+
+func (s *NotesService) GetNotesStats(userID string) ([]NotesStats, error) {
+	var stats []NotesStats
+	err := s.db.Model(&models.Note{}).
+		Select("domain, COUNT(*) as count").
+		Where("user_id = ?", userID).
+		Group("domain").
+		Order("count DESC").
+		Scan(&stats).Error
+	if err != nil {
+		return nil, err
+	}
+	return stats, nil
 }

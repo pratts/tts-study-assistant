@@ -119,3 +119,13 @@ func (h *NotesHandler) DeleteNote(c *fiber.Ctx) error {
 
 	return utils.SendSuccess(c, "Note deleted successfully")
 }
+
+// GetNotesStats returns the number of notes per unique domain for the user
+func (h *NotesHandler) GetNotesStats(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
+	stats, err := h.notesService.GetNotesStats(userID)
+	if err != nil {
+		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to fetch stats")
+	}
+	return utils.SendSuccess(c, "Notes stats fetched successfully", stats)
+}
