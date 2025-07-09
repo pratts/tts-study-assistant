@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Heading, SimpleGrid, Stat, StatLabel, StatNumber, Table, Thead, Tbody, Tr, Th, Td, IconButton, Text, Spinner, Alert, AlertIcon } from '@chakra-ui/react';
-import { FaVolumeUp } from 'react-icons/fa';
+import { FaVolumeUp, FaPause } from 'react-icons/fa';
 import { getNotesStats, getNotes } from '../api/apiClient';
 
 export default function Dashboard() {
@@ -57,6 +57,14 @@ export default function Dashboard() {
                     mt={2}
                     colorScheme="blue"
                     onClick={() => window.speechSynthesis.speak(new SpeechSynthesisUtterance(mostRecent.content))}
+                  />
+                  <IconButton
+                    aria-label="Pause note"
+                    icon={<FaPause />}
+                    mt={2}
+                    colorScheme="gray"
+                    ml={2}
+                    onClick={() => window.speechSynthesis.cancel()}
                   />
                 </>
               ) : <Text>No notes found.</Text>}
