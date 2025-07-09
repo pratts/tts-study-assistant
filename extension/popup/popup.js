@@ -147,16 +147,14 @@ async function loadSiteNotes() {
         };
 
         const currentDomain = getMainDomain(currentUrl.hostname);
-        console.log('main domain:', currentUrl, ' currentDomain: ', currentDomain);
 
         // Get all notes for this domain
         const siteNotes = await apiClient.getNotes({ domain: currentDomain });
-        console.log('filtered notes:', siteNotes);
 
         // Update the section title to show domain, or clear if no notes
         const sectionTitle = document.querySelector('#notes-section h3');
         if (sectionTitle) {
-            sectionTitle.textContent = siteNotes.length > 0 ? `Notes from ${currentDomain}` : '';
+            sectionTitle.textContent = siteNotes.length > 0 ? `Notes from this site.` : '';
         }
 
         displayNotes(siteNotes);
@@ -177,13 +175,11 @@ function displayNotes(notes) {
     const emptyState = document.getElementById('empty-state');
 
     if (notes.length === 0) {
-        console.log('notes length 0')
         notesSection.classList.add('hidden');
         carousel.innerHTML = '';
         return;
     }
 
-    console.log('notes length available')
     notesSection.classList.remove('hidden');
 
     // Clear existing content
@@ -206,6 +202,10 @@ function displayNotes(notes) {
         const noteDate = document.createElement('div');
         noteDate.className = 'note-date';
         noteDate.textContent = formatDate(note.created_at);
+
+        const noteDomain = document.createElement('div');
+        noteDomain.className = 'note-domain';
+        noteDomain.textContent = getDisplayDomain(note.domain);
 
         const noteActions = document.createElement('div');
         noteActions.className = 'note-actions';
@@ -238,10 +238,18 @@ function displayNotes(notes) {
         noteCard.appendChild(noteContent);
         noteCard.appendChild(noteSource);
         noteCard.appendChild(noteDate);
+        noteCard.appendChild(noteDomain);
         noteCard.appendChild(noteActions);
 
         carousel.appendChild(noteCard);
     });
+}
+
+function getDisplayDomain(domain) {
+    if (domain === 'mhjfbmdgcfjbbpaeojofohoefgiehjai' || domain === 'local-file') {
+        return 'Downloaded/Local file';
+    }
+    return domain;
 }
 
 // Player Controls

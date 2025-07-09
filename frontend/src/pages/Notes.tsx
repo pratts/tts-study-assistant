@@ -30,6 +30,13 @@ export default function Notes() {
     fetchNotes();
   }, []);
 
+  function getDisplayDomain(domain: string) {
+    if (domain === 'mhjfbmdgcfjbbpaeojofohoefgiehjai' || domain === 'local-file') {
+      return 'Downloaded/Local file';
+    }
+    return domain;
+  }
+
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this note?')) return;
     try {
@@ -62,7 +69,7 @@ export default function Notes() {
             <Tbody>
               {notes.map(note => (
                 <Tr key={note.id}>
-                  <Td>{note.domain}</Td>
+                  <Td>{getDisplayDomain(note.domain)}</Td>
                   <Td>{note.source_title}</Td>
                   <Td>{note.content.length}</Td>
                   <Td>{getReadTime(note.content.length)}</Td>

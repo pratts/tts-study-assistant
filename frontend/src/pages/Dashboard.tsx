@@ -26,6 +26,13 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
+  function getDisplayDomain(domain: string) {
+    if (domain === 'mhjfbmdgcfjbbpaeojofohoefgiehjai' || domain === 'local-file') {
+      return 'Downloaded/Local file';
+    }
+    return domain;
+  }
+
   return (
     <Box>
       <Heading size="lg" mb={6}>Dashboard</Heading>
@@ -43,7 +50,7 @@ export default function Dashboard() {
               {mostRecent ? (
                 <>
                   <Text mb={2}>{mostRecent.content}</Text>
-                  <Text fontSize="sm" color="gray.500">{mostRecent.domain}</Text>
+                  <Text fontSize="sm" color="gray.500">{getDisplayDomain(mostRecent.domain)}</Text>
                   <IconButton
                     aria-label="Play note"
                     icon={<FaVolumeUp />}
@@ -67,7 +74,7 @@ export default function Dashboard() {
               <Tbody>
                 {stats.map(ds => (
                   <Tr key={ds.domain}>
-                    <Td>{ds.domain}</Td>
+                    <Td>{getDisplayDomain(ds.domain)}</Td>
                     <Td>{ds.count}</Td>
                   </Tr>
                 ))}
