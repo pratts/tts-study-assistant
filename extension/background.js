@@ -377,11 +377,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 console.error('Failed to save note:', error);
             }
 
-            // Send text to content script to play
-            chrome.tabs.sendMessage(tab.id, {
-                action: 'playText',
-                text: info.selectionText
-            });
+            if (typeof tab.id === 'number' && tab.id >= 0) {
+                // Send text to content script to play
+                chrome.tabs.sendMessage(tab.id, {
+                    action: 'playText',
+                    text: info.selectionText
+                });
+            } else {
+                console.warn('Cannot send message: invalid tab id', tab);
+                // Optionally, show a notification or fallback here
+            }
             break;
     }
 });
