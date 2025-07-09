@@ -258,7 +258,7 @@ body {
 /* Empty State */
 .empty-state {
     text-align: center;
-    padding: 32px 16px;
+    /* padding: 32px 16px; */
     color: #6b7280;
 }
 
@@ -365,4 +365,8 @@ body {
     color: #6b7280;
     margin-bottom: 4px;
     font-style: italic;
+}
+
+.hidden {
+  display: none !important;
 }

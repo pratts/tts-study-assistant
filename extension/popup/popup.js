@@ -177,14 +177,14 @@ function displayNotes(notes) {
     const emptyState = document.getElementById('empty-state');
 
     if (notes.length === 0) {
+        console.log('notes length 0')
         notesSection.classList.add('hidden');
-        emptyState.classList.remove('hidden');
         carousel.innerHTML = '';
         return;
     }
 
+    console.log('notes length available')
     notesSection.classList.remove('hidden');
-    emptyState.classList.add('hidden');
 
     // Clear existing content
     carousel.innerHTML = '';
