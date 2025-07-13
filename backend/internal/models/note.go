@@ -10,11 +10,11 @@ import (
 
 type Note struct {
 	ID          uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	UserID      uuid.UUID `gorm:"type:uuid;not null"`
+	UserID      uuid.UUID `gorm:"type:uuid;not null;index:idx_uid_did"`
 	Content     string    `gorm:"type:text;not null"`
 	SourceURL   string
 	SourceTitle string
-	Domain      string         `gorm:"type:text" json:"domain,omitempty"`
+	Domain      string         `gorm:"type:text;index:idx_uid_did" json:"domain,omitempty"`
 	Metadata    datatypes.JSON `gorm:"type:jsonb" json:"metadata,omitempty"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
