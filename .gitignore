@@ -19,3 +19,8 @@ tts-extension.zip
 # IDE
 .vscode/
 .idea/
+
+artifacts/
+*.log
+*.tmp
+*.bak
