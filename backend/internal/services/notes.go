@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -42,6 +43,7 @@ type NoteResponse struct {
 	Metadata    map[string]any `json:"metadata,omitempty"` // Arbitrary metadata for the note
 	CreatedAt   string         `json:"created_at"`
 	UpdatedAt   string         `json:"updated_at"`
+	Summary     string         `json:"summary,omitempty"`
 }
 
 type NotesStats struct {
@@ -92,6 +94,7 @@ func (s *NotesService) GetNotes(userID string, page, pageSize int, sourceURL str
 			Metadata:    metadata,
 			CreatedAt:   note.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			UpdatedAt:   note.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			Summary:     note.Summary,
 		}
 	}
 
@@ -119,6 +122,7 @@ func (s *NotesService) GetNoteByID(noteID, userID string) (*NoteResponse, error)
 		Metadata:    metadata,
 		CreatedAt:   note.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   note.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Summary:     note.Summary,
 	}
 	return response, nil
 }
@@ -243,4 +247,25 @@ func (s *NotesService) GetNotesStats(userID string) ([]NotesStats, error) {
 		return nil, err
 	}
 	return stats, nil
+}
+
+// SummarizeNote summarizes a note's content and saves the summary
+func (s *NotesService) SummarizeNote(noteID, userID string, summarizer *SummarizerService) (string, error) {
+	var note models.Note
+	if err := s.db.Where("id = ? AND user_id = ?", noteID, userID).First(&note).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("note not found")
+		}
+		return "", err
+	}
+	fmt.Println("Note found: ", note)
+	summary, err := summarizer.Summarize(note.Content)
+	if err != nil {
+		return "", err
+	}
+	note.Summary = summary
+	if err := s.db.Save(&note).Error; err != nil {
+		return "", err
+	}
+	return summary, nil
 }
