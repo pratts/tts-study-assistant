@@ -75,4 +75,11 @@ export class ApiClient {
         });
         return true;
     }
+
+    async summarize(noteId) {
+        const summary = await this._fetchWithAuth(`${this.API_URL}/notes/${noteId}/summarize`, {
+            method: 'POST'
+        });
+        return summary.data;
+    }
 } 
