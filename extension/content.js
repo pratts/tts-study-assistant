@@ -31,55 +31,80 @@ function createActionButton() {
     actionButton.id = 'tts-action-button';
     actionButton.className = 'tts-action-button hidden';
 
-    // Use text instead of emoji
-    const saveBtn = document.createElement('button');
-    saveBtn.textContent = 'Save & Play';
-    saveBtn.className = 'tts-btn';
+    // Create buttons using innerHTML
+    actionButton.innerHTML = `
+        <button class="tts-btn tts-save-play">Save & Play</button>
+        <button class="tts-btn tts-summarize">Summarize</button>
+    `;
 
-    actionButton.appendChild(saveBtn);
+    document.body.appendChild(actionButton);
 
-    saveBtn.addEventListener('click', async (e) => {
+    // Add listeners after the elements are in the DOM
+    const savePlayBtn = actionButton.querySelector('.tts-save-play');
+    const summarizeBtn = actionButton.querySelector('.tts-summarize');
+
+    // Save & Play button listener
+    savePlayBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
 
         if (selectedText) {
-            // Determine the best URL to save
-            const pageUrl = getTruePageUrl();
-            const actualUrl = window.location.href;
-
-            // Construct a descriptive title
-            let title = document.title || 'PDF Document';
-            if (window.self !== window.top) {
-                title = `${title} (embedded)`;
-            }
-
-            // Save note with parent page URL if available
-            const saveResponse = await chrome.runtime.sendMessage({
-                action: 'saveNote',
-                noteData: {
-                    content: selectedText,
-                    source_url: pageUrl,  // Use parent page URL
-                    source_title: title,
-                    // Optionally store the actual PDF URL in a metadata field
-                    metadata: {
-                        actual_url: actualUrl,
-                        is_iframe: window.self !== window.top
+            try {
+                // Save note first
+                const saveResponse = await chrome.runtime.sendMessage({
+                    action: 'saveNote',
+                    noteData: {
+                        content: selectedText,
+                        source_url: getTruePageUrl(),
+                        source_title: document.title || 'PDF Document'
                     }
-                }
-            });
+                });
 
-            // Then play the selected text
-            await chrome.runtime.sendMessage({
-                action: 'speak',
-                text: selectedText,
-                options: {}
-            });
+                // Then play the text
+                await chrome.runtime.sendMessage({
+                    action: 'speak',
+                    text: selectedText,
+                    options: {}
+                });
 
-            hideActionButton();
-            window.getSelection().removeAllRanges();
+                hideActionButton();
+                window.getSelection().removeAllRanges();
+            } catch (error) {
+                console.error('Error:', error);
+            }
         }
     });
 
-    document.body.appendChild(actionButton);
+    // Summarize button listener
+    summarizeBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+
+        if (selectedText) {
+            try {
+                // Show loading state
+                summarizeBtn.textContent = 'Loading...';
+                summarizeBtn.disabled = true;
+
+                // Send to background to handle (reuse your context menu logic)
+                const response = await chrome.runtime.sendMessage({
+                    action: 'triggerSummarize',
+                    text: selectedText,
+                    url: getTruePageUrl(),
+                    title: document.title || 'PDF Document'
+                });
+
+                if (response.success && response.summary) {
+                    showSummaryModal(response.summary);
+                }
+
+                hideActionButton();
+                window.getSelection().removeAllRanges();
+            } catch (error) {
+                console.error('Error summarizing:', error);
+                summarizeBtn.textContent = 'Summarize';
+                summarizeBtn.disabled = false;
+            }
+        }
+    });
 }
 
 // Show action button near selection
@@ -211,4 +236,37 @@ function getTruePageUrl() {
     } catch (e) {
         return window.location.href;
     }
+}
+
+function showSummaryModal(summary) {
+    // Remove any existing modal
+    const existingModal = document.querySelector('.tts-summary-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'tts-summary-modal';
+    modal.innerHTML = `
+        <div class="tts-summary-content">
+            <h3>Summary</h3>
+            <p>${summary}</p>
+            <div class="modal-actions">
+                <button class="tts-btn close-modal">Close</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Add event listeners
+    modal.querySelector('.close-modal').addEventListener('click', () => {
+        modal.remove();
+    });
+
+    // Close on click outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
 }

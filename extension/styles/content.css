@@ -211,9 +211,11 @@
 /* Action button for text selection */
 .tts-action-button {
     position: absolute;
-    z-index: 2147483647; /* Maximum z-index */
+    z-index: 2147483647;
     background: transparent;
     padding: 0;
+    display: flex;
+    gap: 4px;
 }
 
 .tts-action-button.hidden {
@@ -242,4 +244,52 @@
 
 .tts-btn:active {
     transform: translateY(0);
+}
+
+/* Summary Modal Styles */
+.tts-summary-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2147483647;
+}
+
+.tts-summary-content {
+    background: white;
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.tts-summary-content h3 {
+    margin: 0 0 16px 0;
+    font-size: 20px;
+    color: #1f2937;
+}
+
+.tts-summary-content p {
+    margin: 0 0 20px 0;
+    line-height: 1.6;
+    color: #374151;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* Make buttons smaller when there are two */
+.tts-action-button .tts-btn {
+    padding: 4px 10px;
+    font-size: 12px;
 }

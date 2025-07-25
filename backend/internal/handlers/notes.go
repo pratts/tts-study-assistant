@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
 	"github.com/pratts/tts-study-assistant/backend/pkg/utils"
@@ -128,4 +130,23 @@ func (h *NotesHandler) GetNotesStats(c *fiber.Ctx) error {
 		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to fetch stats")
 	}
 	return utils.SendSuccess(c, "Notes stats fetched successfully", stats)
+}
+
+// SummarizeNote handles summarizing a note by ID
+func (h *NotesHandler) SummarizeNote(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
+	noteID := c.Params("id")
+	if noteID == "" {
+		return utils.SendError(c, fiber.StatusBadRequest, "Note ID is required")
+	}
+	fmt.Println("UserId: ", userID, " NoteId: ", noteID)
+	summarizer := services.NewSummarizerService()
+	summary, err := h.notesService.SummarizeNote(noteID, userID, summarizer)
+	if err != nil {
+		if err.Error() == "note not found" {
+			return utils.SendError(c, fiber.StatusNotFound, "Note not found")
+		}
+		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to summarize note")
+	}
+	return utils.SendSuccess(c, "Note summarized successfully", fiber.Map{"summary": summary})
 }

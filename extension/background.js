@@ -51,6 +51,13 @@ chrome.runtime.onInstalled.addListener(() => {
         contexts: ['selection']
     });
 
+    chrome.contextMenus.create({
+        id: 'summarize-text',
+        parentId: 'study-assistant',
+        title: '📝 Summarize Text',
+        contexts: ['selection']
+    });
+
     console.log('Default settings and context menu initialized');
 });
 
@@ -106,10 +113,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
             return true; // Will respond asynchronously
 
+        case 'triggerSummarize':
+            handleMessageSummarize(request);
+            break;
         default:
             sendResponse({ status: 'unknown action' });
     }
 });
+
+async function handleMessageSummarize(request) {
+    try {
+        const isAuthenticated = await ApiClient.isAuthenticated();
+        if (!isAuthenticated) {
+            sendResponse({ success: false, error: 'NOT_AUTHENTICATED' });
+            return;
+        }
+
+        // Create note with the data from content script
+        const note = await apiClient.createNote({
+            content: request.text,
+            source_url: request.url,
+            source_title: request.title
+        });
+
+        // Get summary
+        const summary = await apiClient.summarize(note.id);
+
+        updateNoteBadge();
+
+        sendResponse({
+            success: true,
+            summary: summary.summary || summary.content
+        });
+    } catch (error) {
+        console.error('Failed to summarize:', error);
+        sendResponse({ success: false, error: error.message });
+    }
+    return true; // Will respond asynchronously
+}
 
 // Handle keyboard command
 chrome.commands.onCommand.addListener((command) => {
@@ -386,6 +427,48 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             } else {
                 console.warn('Cannot send message: invalid tab id', tab);
                 // Optionally, show a notification or fallback here
+            }
+            break;
+
+        case 'summarize-text':
+            try {
+                const isAuthenticated = await ApiClient.isAuthenticated();
+                if (!isAuthenticated) {
+                    chrome.notifications.create({
+                        type: 'basic',
+                        iconUrl: 'icons/icon-48.png',
+                        title: 'Login Required',
+                        message: 'Please login to save notes. Click the extension icon.'
+                    });
+                    return;
+                }
+
+                // This is perfect - you're using info.selectionText
+                const note = await apiClient.createNote({
+                    content: info.selectionText,
+                    source_url: tab.url,
+                    source_title: tab.title
+                });
+
+                chrome.notifications.create({
+                    type: 'basic',
+                    iconUrl: 'icons/icon-48.png',
+                    title: 'Note Saved!',
+                    message: 'Your note has been saved successfully. Please wait for summary.'
+                });
+
+                updateNoteBadge();
+                const summary = await apiClient.summarize(note.id);
+
+                // Show summary notification
+                chrome.notifications.create({
+                    type: 'basic',
+                    iconUrl: 'icons/icon-48.png',
+                    title: 'Summary Ready!',
+                    message: summary.summary || 'Summary generated successfully.'
+                });
+            } catch (error) {
+                console.error('Failed to save note:', error);
             }
             break;
     }
