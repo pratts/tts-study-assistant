@@ -191,6 +191,7 @@ body {
 }
 
 .note-card {
+    min-height: 140px;
     flex: 0 0 220px;
     background: #f9fafb;
     border: 1px solid #e5e7eb;
@@ -221,11 +222,22 @@ body {
 }
 
 .note-actions {
-    display: flex;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 0.8fr;
+    gap: 4px;
 }
 
 .note-actions button {
+    padding: 4px 6px;
+    font-size: 11px;
+}
+
+/* .note-actions {
+    display: flex;
+    gap: 8px;
+} */
+
+/* .note-actions button {
     flex: 1;
     padding: 4px 8px;
     font-size: 12px;
@@ -234,7 +246,7 @@ body {
     border-radius: 4px;
     cursor: pointer;
     transition: background 0.2s;
-}
+} */
 
 .note-actions button:hover {
     background: #f3f4f6;
@@ -369,4 +381,71 @@ body {
 
 .hidden {
   display: none !important;
+}
+
+
+
+
+/* Add these styles to popup.css */
+
+/* Note card with summary */
+.note-summary {
+    font-size: 12px;
+    color: #059669;
+    background: #f0fdf4;
+    padding: 6px 8px;
+    border-radius: 4px;
+    margin: 8px 0;
+    line-height: 1.4;
+}
+
+.note-summary strong {
+    color: #047857;
+}
+
+/* Three-button layout */
+
+
+/* Summary button styling */
+.summary-btn {
+    background: #f3f4f6 !important;
+}
+
+.summary-btn:hover {
+    background: #e5e7eb !important;
+}
+
+/* Loading state */
+.summary-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+/* Toast notifications */
+.toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: #10b981;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 6px;
+    font-size: 13px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: transform 0.3s ease;
+    z-index: 1000;
+}
+
+.toast.show {
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast-error {
+    background: #ef4444;
+}
+
+/* Make note cards slightly taller to accommodate summary */
+.note-card {
+    min-height: 140px;
 }

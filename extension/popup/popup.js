@@ -176,11 +176,12 @@ function displayNotes(notes) {
 
     if (notes.length === 0) {
         notesSection.classList.add('hidden');
-        carousel.innerHTML = '';
+        emptyState.classList.remove('hidden');
         return;
     }
 
     notesSection.classList.remove('hidden');
+    emptyState.classList.add('hidden');
 
     // Clear existing content
     carousel.innerHTML = '';
@@ -189,12 +190,20 @@ function displayNotes(notes) {
     notes.forEach(note => {
         const noteCard = document.createElement('div');
         noteCard.className = 'note-card';
+        noteCard.id = `note-${note.id}`;
 
         const noteContent = document.createElement('div');
         noteContent.className = 'note-content';
         noteContent.textContent = truncateText(note.content, 120);
 
-        // Show source info
+        // Show summary if exists
+        if (note.summary) {
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'note-summary';
+            summaryDiv.innerHTML = `<strong>Summary:</strong> ${truncateText(note.summary, 100)}`;
+            noteCard.appendChild(summaryDiv);
+        }
+
         const noteSource = document.createElement('div');
         noteSource.className = 'note-source';
         noteSource.textContent = note.source_title || 'Untitled';
@@ -203,13 +212,10 @@ function displayNotes(notes) {
         noteDate.className = 'note-date';
         noteDate.textContent = formatDate(note.created_at);
 
-        const noteDomain = document.createElement('div');
-        noteDomain.className = 'note-domain';
-        noteDomain.textContent = getDisplayDomain(note.domain);
-
         const noteActions = document.createElement('div');
         noteActions.className = 'note-actions';
 
+        // Play button - plays full content
         const playBtn = document.createElement('button');
         playBtn.textContent = '🔊 Play';
         playBtn.addEventListener('click', async () => {
@@ -218,6 +224,27 @@ function displayNotes(notes) {
                 text: note.content
             });
         });
+
+        // Summary button - either play summary or generate it
+        const summaryBtn = document.createElement('button');
+        summaryBtn.className = 'summary-btn';
+
+        if (note.summary) {
+            // Has summary - play it
+            summaryBtn.textContent = '📝 Play Summary';
+            summaryBtn.addEventListener('click', async () => {
+                await chrome.runtime.sendMessage({
+                    action: 'speak',
+                    text: note.summary
+                });
+            });
+        } else {
+            // No summary - generate it
+            summaryBtn.textContent = '✨ Summarize';
+            summaryBtn.addEventListener('click', async () => {
+                await generateSummary(note.id, summaryBtn, noteCard);
+            });
+        }
 
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = '🗑️ Delete';
@@ -233,16 +260,81 @@ function displayNotes(notes) {
         });
 
         noteActions.appendChild(playBtn);
+        noteActions.appendChild(summaryBtn);
         noteActions.appendChild(deleteBtn);
 
         noteCard.appendChild(noteContent);
         noteCard.appendChild(noteSource);
         noteCard.appendChild(noteDate);
-        noteCard.appendChild(noteDomain);
         noteCard.appendChild(noteActions);
 
         carousel.appendChild(noteCard);
     });
+}
+
+async function generateSummary(noteId, button, noteCard) {
+    try {
+        // Show loading state
+        const originalText = button.textContent;
+        button.textContent = '⏳ Generating...';
+        button.disabled = true;
+
+        // Call API to generate summary
+        const summaryResponse = await apiClient.summarize(noteId);
+
+        // Update button to play summary
+        button.textContent = '📝 Play Summary';
+        button.disabled = false;
+
+        // Remove old click listener
+        const newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
+
+        // Add new click listener for playing summary
+        newButton.addEventListener('click', async () => {
+            await chrome.runtime.sendMessage({
+                action: 'speak',
+                text: summaryResponse.summary || summaryResponse.content
+            });
+        });
+
+        // Add summary to the note card UI
+        const existingSummary = noteCard.querySelector('.note-summary');
+        if (!existingSummary) {
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'note-summary';
+            summaryDiv.innerHTML = `<strong>Summary:</strong> ${truncateText(summaryResponse.summary || summaryResponse.content, 100)}`;
+
+            // Insert after note content
+            const noteContent = noteCard.querySelector('.note-content');
+            noteContent.insertAdjacentElement('afterend', summaryDiv);
+        }
+
+        // Show success notification
+        showToast('Summary generated successfully!');
+
+    } catch (error) {
+        console.error('Failed to generate summary:', error);
+        button.textContent = originalText;
+        button.disabled = false;
+        showToast('Failed to generate summary', 'error');
+    }
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Animate in
+    setTimeout(() => toast.classList.add('show'), 10);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 function getDisplayDomain(domain) {
