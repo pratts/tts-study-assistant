@@ -205,8 +205,8 @@ function displayNotes(notes) {
         }
 
         const noteSource = document.createElement('div');
-        noteSource.className = 'note-source';
-        noteSource.textContent = note.source_title || 'Untitled';
+        // noteSource.className = 'note-source';
+        // noteSource.textContent = note.source_title || 'Untitled';
 
         const noteDate = document.createElement('div');
         noteDate.className = 'note-date';
