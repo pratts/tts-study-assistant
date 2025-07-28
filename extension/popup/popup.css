@@ -7,7 +7,7 @@ body {
 
 .popup-container {
     width: 380px;
-    min-height: 200px;
+    min-height: 300px;
     background: #fff;
     display: flex;
     flex-direction: column;
@@ -304,7 +304,7 @@ body {
 .modal-box {
     background: #fff;
     border-radius: 12px;
-    padding: 24px;
+    padding: 20px;
     width: 90%;
     max-width: 320px;
     position: relative;
@@ -330,7 +330,7 @@ body {
 }
 
 .form-group {
-    margin-bottom: 16px;
+    margin-bottom: 10px;
 }
 
 .form-group label {
@@ -343,7 +343,7 @@ body {
 
 .form-group input {
     width: 100%;
-    padding: 8px 12px;
+    padding: 8px 8px;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
     font-size: 14px;

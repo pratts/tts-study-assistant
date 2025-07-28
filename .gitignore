@@ -24,3 +24,4 @@ artifacts/
 *.log
 *.tmp
 *.bak
+*.zip
