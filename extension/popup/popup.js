@@ -282,6 +282,14 @@ async function generateSummary(noteId, button, noteCard) {
         // Call API to generate summary
         const summaryResponse = await apiClient.summarize(noteId);
 
+        // Check if summary is unavailable
+        if (summaryResponse.summary === "unavailable") {
+            button.textContent = originalText;
+            button.disabled = false;
+            showToast('Summary unavailable - text may be too short or incomplete', 'warning');
+            return;
+        }
+
         // Update button to play summary
         button.textContent = '📝 Play Summary';
         button.disabled = false;

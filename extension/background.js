@@ -141,10 +141,19 @@ async function handleMessageSummarize(request) {
 
         updateNoteBadge();
 
-        sendResponse({
-            success: true,
-            summary: summary.summary || summary.content
-        });
+        // Check if summary is unavailable
+        if (summary.summary === "unavailable") {
+            sendResponse({
+                success: true,
+                summary: "unavailable",
+                message: "Summary unavailable - text may be too short or incomplete"
+            });
+        } else {
+            sendResponse({
+                success: true,
+                summary: summary.summary || summary.content
+            });
+        }
     } catch (error) {
         console.error('Failed to summarize:', error);
         sendResponse({ success: false, error: error.message });
@@ -460,13 +469,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 updateNoteBadge();
                 const summary = await apiClient.summarize(note.id);
 
-                // Show summary notification
-                chrome.notifications.create({
-                    type: 'basic',
-                    iconUrl: 'icons/icon-48.png',
-                    title: 'Summary Ready!',
-                    message: summary.summary || 'Summary generated successfully.'
-                });
+                // Check if summary is unavailable
+                if (summary.summary === "unavailable") {
+                    chrome.notifications.create({
+                        type: 'basic',
+                        iconUrl: 'icons/icon-48.png',
+                        title: 'Summary Unavailable',
+                        message: 'Text may be too short or incomplete for summarization.'
+                    });
+                } else {
+                    // Show summary notification
+                    chrome.notifications.create({
+                        type: 'basic',
+                        iconUrl: 'icons/icon-48.png',
+                        title: 'Summary Ready!',
+                        message: summary.summary || 'Summary generated successfully.'
+                    });
+                }
             } catch (error) {
                 console.error('Failed to save note:', error);
             }

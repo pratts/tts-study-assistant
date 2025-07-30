@@ -445,6 +445,10 @@ body {
     background: #ef4444;
 }
 
+.toast-warning {
+    background: #f59e0b;
+}
+
 /* Make note cards slightly taller to accommodate summary */
 .note-card {
     min-height: 140px;

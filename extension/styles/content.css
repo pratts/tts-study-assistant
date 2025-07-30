@@ -270,6 +270,19 @@
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
+.tts-summary-content.unavailable {
+    background: #fef3c7;
+    border: 2px solid #f59e0b;
+}
+
+.tts-summary-content.unavailable h3 {
+    color: #92400e;
+}
+
+.tts-summary-content.unavailable p {
+    color: #78350f;
+}
+
 .tts-summary-content h3 {
     margin: 0 0 16px 0;
     font-size: 20px;

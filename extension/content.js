@@ -92,8 +92,12 @@ function createActionButton() {
                     title: document.title || 'PDF Document'
                 });
 
-                if (response.success && response.summary) {
-                    showSummaryModal(response.summary);
+                if (response.success) {
+                    if (response.summary === "unavailable") {
+                        showSummaryModal("Summary unavailable - text may be too short or incomplete for summarization.", "unavailable");
+                    } else if (response.summary) {
+                        showSummaryModal(response.summary);
+                    }
                 }
 
                 hideActionButton();
@@ -238,7 +242,7 @@ function getTruePageUrl() {
     }
 }
 
-function showSummaryModal(summary) {
+function showSummaryModal(summary, type = "success") {
     // Remove any existing modal
     const existingModal = document.querySelector('.tts-summary-modal');
     if (existingModal) {
@@ -247,9 +251,14 @@ function showSummaryModal(summary) {
 
     const modal = document.createElement('div');
     modal.className = 'tts-summary-modal';
+
+    const isUnavailable = type === "unavailable";
+    const title = isUnavailable ? "Summary Unavailable" : "Summary";
+    const contentClass = isUnavailable ? "tts-summary-content unavailable" : "tts-summary-content";
+
     modal.innerHTML = `
-        <div class="tts-summary-content">
-            <h3>Summary</h3>
+        <div class="${contentClass}">
+            <h3>${title}</h3>
             <p>${summary}</p>
             <div class="modal-actions">
                 <button class="tts-btn close-modal">Close</button>
