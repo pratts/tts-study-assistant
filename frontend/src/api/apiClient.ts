@@ -83,18 +83,22 @@ export async function refreshTokenApi(refreshToken: string) {
     return { success: false };
 }
 
-export function logoutApi() {
+export async function logoutApi() {
     const refreshToken = localStorage.getItem('refresh_token');
     if (refreshToken) {
-        fetch(`${API_URL}/auth/logout`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refresh_token: refreshToken })
-        });
+        try {
+            await fetch(`${API_URL}/auth/logout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken })
+            });
+        } catch (error) {
+            console.error('Logout request failed:', error);
+        }
     }
+    // Clear tokens from localStorage
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
-    window.location.href = '/';
 }
 
 // Dashboard stats: GET /notes/stats

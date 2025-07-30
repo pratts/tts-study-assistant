@@ -50,7 +50,7 @@ export default function Sidebar() {
           justifyContent="flex-start"
           fontWeight="bold"
           fontSize="lg"
-          onClick={logout}
+          onClick={async () => await logout()}
         >
           Logout
         </Button>

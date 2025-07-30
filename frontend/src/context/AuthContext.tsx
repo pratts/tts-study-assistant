@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loginApi, refreshTokenApi, logoutApi } from '../api/apiClient';
+import { loginApi, refreshTokenApi, logoutApi, getUserProfile } from '../api/apiClient';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   loading: boolean;
   user: any;
   login: (email: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -15,7 +15,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   user: null,
   login: async () => false,
-  logout: () => {},
+  logout: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -28,16 +28,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const checkAuth = async () => {
       const accessToken = localStorage.getItem('access_token');
       if (accessToken) {
-        // If you need to check token validity, use fetchWithAuth on a protected endpoint or just check token presence
-        // For now, we'll assume if accessToken exists, it's valid for now.
-        // If you need to verify, you'd call a protected endpoint here.
-        setIsAuthenticated(true);
-        setUser(null); // Placeholder, actual user info would be fetched here
+        try {
+          // Validate token by calling a protected endpoint
+          const userData = await getUserProfile();
+          setIsAuthenticated(true);
+          setUser(userData);
+        } catch (error) {
+          // Token is invalid, clear it
+          console.log('Token validation failed, clearing tokens');
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          setIsAuthenticated(false);
+          setUser(null);
+        }
       } else {
         setIsAuthenticated(false);
         setUser(null);
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
       }
       setLoading(false);
     };
@@ -56,13 +62,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return false;
   };
 
-  const logout = () => {
-    logoutApi();
-    setIsAuthenticated(false);
-    setUser(null);
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    navigate('/');
+  const logout = async () => {
+    try {
+      await logoutApi();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    } finally {
+      // Always clear local state regardless of API call success
+      setIsAuthenticated(false);
+      setUser(null);
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      navigate('/');
+    }
   };
 
   return (

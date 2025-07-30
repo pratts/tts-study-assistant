@@ -1,11 +1,37 @@
-import React, { useState } from 'react';
-import { Box, Flex, VStack, Heading, Text, Divider, useColorModeValue } from '@chakra-ui/react';
+import React, { useState, useEffect } from 'react';
+import { Box, Flex, VStack, Heading, Text, Divider, useColorModeValue, Spinner, Center } from '@chakra-ui/react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import LoginForm from '../components/Auth/LoginForm';
 import RegisterForm from '../components/Auth/RegisterForm';
 
 export default function Home() {
   const [showRegister, setShowRegister] = useState(false);
+  const { isAuthenticated, loading } = useAuth();
+  const navigate = useNavigate();
   const bg = useColorModeValue('white', 'gray.800');
+
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, loading, navigate]);
+
+  // Show loading spinner while checking authentication
+  if (loading) {
+    return (
+      <Flex minH="100vh" align="center" justify="center" bgGradient="linear(to-r, brand.600, brand.500)">
+        <Center>
+          <Spinner size="xl" color="white" />
+        </Center>
+      </Flex>
+    );
+  }
+
+  // Don't render the login page if user is authenticated
+  if (isAuthenticated) {
+    return null;
+  }
 
   return (
     <Flex minH="100vh" align="center" justify="center" bgGradient="linear(to-r, brand.600, brand.500)">

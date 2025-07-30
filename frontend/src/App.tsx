@@ -1,5 +1,6 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { Box, Spinner, Center } from '@chakra-ui/react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
@@ -10,7 +11,17 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated, loading } = useAuth();
-  if (loading) return null;
+  
+  if (loading) {
+    return (
+      <Box minH="100vh" display="flex" alignItems="center" justifyContent="center">
+        <Center>
+          <Spinner size="xl" color="brand.600" />
+        </Center>
+      </Box>
+    );
+  }
+  
   return isAuthenticated ? children : <Navigate to="/" />;
 }
 
