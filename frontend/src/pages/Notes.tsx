@@ -1,15 +1,27 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Heading, Table, Thead, Tbody, Tr, Th, Td, IconButton, Text, Spinner, Alert, AlertIcon } from '@chakra-ui/react';
-import { FaCopy, FaTrash, FaVolumeUp, FaPause, FaRedo } from 'react-icons/fa';
-import { getNotes, deleteNote } from '../api/apiClient';
-import { Select, Button, HStack } from '@chakra-ui/react';
-
-function getReadTime(chars: number) {
-  // Assume 200 chars/minute
-  const mins = Math.floor(chars / 200);
-  const secs = Math.round(((chars / 200) - mins) * 60);
-  return `${mins}:${secs.toString().padStart(2, '0')} min`;
-}
+import { 
+  Box, 
+  Heading, 
+  Table, 
+  Thead, 
+  Tbody, 
+  Tr, 
+  Th, 
+  Td, 
+  IconButton, 
+  Text, 
+  Spinner, 
+  Alert, 
+  AlertIcon,
+  Button,
+  HStack,
+  Badge,
+  useDisclosure
+} from '@chakra-ui/react';
+import { FaEye, FaTrash, FaFileAlt, FaCopy } from 'react-icons/fa';
+import { getNotes, deleteNote, generateSummary } from '../api/apiClient';
+import { Select } from '@chakra-ui/react';
+import NoteModal from '../components/NoteModal';
 
 export default function Notes() {
   const [notes, setNotes] = useState<any[]>([]);
@@ -18,8 +30,9 @@ export default function Notes() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [hasMore, setHasMore] = useState(false);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const [utterance, setUtterance] = useState<SpeechSynthesisUtterance | null>(null);
+  const [generatingSummaries, setGeneratingSummaries] = useState<Set<string>>(new Set());
+  const [selectedNoteId, setSelectedNoteId] = useState<string>('');
+  const { isOpen, onOpen, onClose } = useDisclosure();
 
   useEffect(() => {
     async function fetchNotes() {
@@ -37,35 +50,49 @@ export default function Notes() {
     fetchNotes();
   }, [page, pageSize]);
 
-  // Stop playback when navigating away or unmounting
-  useEffect(() => {
-    return () => {
-      window.speechSynthesis.cancel();
-    };
-  }, []);
-
-  // Stop playback if a new note is played
-  const handlePlayPause = (note: any) => {
-    if (playingId === note.id) {
-      window.speechSynthesis.pause();
-      setPlayingId(null);
-    } else {
-      window.speechSynthesis.cancel();
-      const u = new window.SpeechSynthesisUtterance(note.content);
-      u.onend = () => setPlayingId(null);
-      window.speechSynthesis.speak(u);
-      setUtterance(u);
-      setPlayingId(note.id);
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Delete this note?')) return;
+    try {
+      await deleteNote(id);
+      setNotes(notes.filter(n => n.id !== id));
+    } catch (e: any) {
+      alert(e.message || 'Failed to delete note');
     }
   };
 
-  const handleReplay = (note: any) => {
-    window.speechSynthesis.cancel();
-    const u = new window.SpeechSynthesisUtterance(note.content);
-    u.onend = () => setPlayingId(null);
-    window.speechSynthesis.speak(u);
-    setUtterance(u);
-    setPlayingId(note.id);
+  const handleGenerateSummary = async (noteId: string) => {
+    setGeneratingSummaries(prev => new Set(prev).add(noteId));
+    try {
+      const data = await generateSummary(noteId);
+      // Check if summary is unavailable - don't save it to the note
+      if (data.summary !== "unavailable") {
+        setNotes(notes.map(note => 
+          note.id === noteId 
+            ? { ...note, summary: data.summary }
+            : note
+        ));
+      } else {
+        // Show alert for unavailable summary
+        alert('Summary unavailable - text may be too short or incomplete for summarization.');
+      }
+    } catch (e: any) {
+      alert(e.message || 'Failed to generate summary');
+    } finally {
+      setGeneratingSummaries(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(noteId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleViewNote = (noteId: string) => {
+    setSelectedNoteId(noteId);
+    onOpen();
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
   };
 
   function getDisplayDomain(domain: string) {
@@ -75,14 +102,9 @@ export default function Notes() {
     return domain;
   }
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this note?')) return;
-    try {
-      await deleteNote(id);
-      setNotes(notes.filter(n => n.id !== id));
-    } catch (e: any) {
-      alert(e.message || 'Failed to delete note');
-    }
+  const truncateText = (text: string, maxLength: number) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
   };
 
   return (
@@ -96,41 +118,48 @@ export default function Notes() {
             <Thead>
               <Tr>
                 <Th>Domain</Th>
-                <Th>Site</Th>
-                <Th>Length</Th>
-                <Th>Read Time</Th>
+                <Th>Note Preview</Th>
                 <Th>Actions</Th>
               </Tr>
             </Thead>
             <Tbody>
               {notes.map(note => (
                 <Tr key={note.id}>
-                  <Td>{getDisplayDomain(note.domain)}</Td>
-                  <Td>{note.source_title}</Td>
-                  <Td>{note.content.length}</Td>
-                  <Td>{getReadTime(note.content.length)}</Td>
+                  <Td>
+                    <Badge colorScheme="blue">
+                      {getDisplayDomain(note.domain || 'Unknown')}
+                    </Badge>
+                  </Td>
+                  <Td>
+                    <Text fontSize="sm">
+                      {truncateText(note.content, 50)}
+                    </Text>
+                  </Td>
                   <Td>
                     <HStack spacing={1}>
                       <IconButton
-                        aria-label={playingId === note.id ? 'Pause note' : 'Play note'}
-                        icon={playingId === note.id ? <FaPause /> : <FaVolumeUp />}
-                        colorScheme={playingId === note.id ? 'gray' : 'blue'}
+                        aria-label="View note"
+                        icon={<FaEye />}
+                        colorScheme="blue"
                         size="sm"
-                        onClick={() => handlePlayPause(note)}
-                      />
-                      <IconButton
-                        aria-label="Replay note"
-                        icon={<FaRedo />}
-                        colorScheme="gray"
-                        size="sm"
-                        onClick={() => handleReplay(note)}
+                        onClick={() => handleViewNote(note.id)}
                       />
                       <IconButton
                         aria-label="Copy note"
                         icon={<FaCopy />}
                         size="sm"
-                        onClick={() => navigator.clipboard.writeText(note.content)}
+                        onClick={() => handleCopy(note.content)}
                       />
+                      {!note.summary && (
+                        <IconButton
+                          aria-label="Generate summary"
+                          icon={<FaFileAlt />}
+                          colorScheme="green"
+                          size="sm"
+                          isLoading={generatingSummaries.has(note.id)}
+                          onClick={() => handleGenerateSummary(note.id)}
+                        />
+                      )}
                       <IconButton
                         aria-label="Delete note"
                         icon={<FaTrash />}
@@ -145,6 +174,7 @@ export default function Notes() {
             </Tbody>
           </Table>
           {notes.length === 0 && <Text mt={4}>No notes found.</Text>}
+          
           {/* Pagination controls */}
           <HStack mt={4} justify="space-between">
             <HStack>
@@ -161,6 +191,13 @@ export default function Notes() {
           </HStack>
         </Box>
       )}
+
+      {/* Note Modal */}
+      <NoteModal 
+        isOpen={isOpen} 
+        onClose={onClose} 
+        noteId={selectedNoteId} 
+      />
     </Box>
   );
 } 

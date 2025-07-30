@@ -133,4 +133,18 @@ export async function updatePassword(oldPassword: string, newPassword: string) {
 export async function getUserProfile() {
     const data = await fetchWithAuth(`${API_URL}/user/profile`);
     return data.data || data;
+}
+
+// Get single note: GET /notes/:id
+export async function getNote(id: string) {
+    const data = await fetchWithAuth(`${API_URL}/notes/${id}`);
+    return data.data || data;
+}
+
+// Generate summary: POST /notes/:id/summarize
+export async function generateSummary(id: string) {
+    const data = await fetchWithAuth(`${API_URL}/notes/${id}/summarize`, {
+        method: 'POST'
+    });
+    return data.data || data;
 } 

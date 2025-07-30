@@ -22,13 +22,18 @@ func NewSummarizerService() *SummarizerService {
 }
 
 func (s *SummarizerService) Summarize(text string) (string, error) {
+	// Check if text is too short for meaningful summarization
+	if len(text) < 20 {
+		return "unavailable", nil
+	}
+
 	// Call OpenAI API
 	payload := map[string]interface{}{
 		"model": "gpt-3.5-turbo",
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a helpful assistant that creates concise summaries. Summarize the following text in 2-3 sentences, capturing the key points.",
+				"content": "You are a helpful assistant that creates concise summaries. Summarize the following text in 2-3 sentences, capturing the key points. If the text is too short, incomplete, or lacks sufficient content for meaningful summarization, respond with exactly 'unavailable' (no quotes, no additional text).",
 			},
 			{
 				"role":    "user",
@@ -82,5 +87,49 @@ func (s *SummarizerService) Summarize(text string) (string, error) {
 		return "", errors.New("no summary returned from OpenAI API")
 	}
 
-	return result.Choices[0].Message.Content, nil
+	summary := result.Choices[0].Message.Content
+
+	// Check if the response indicates unavailability
+	if summary == "unavailable" {
+		return "unavailable", nil
+	}
+
+	// Check for common phrases that indicate the text is too short or incomplete
+	unavailablePhrases := []string{
+		"text appears to be cut-off",
+		"please provide more context",
+		"complete text",
+		"insufficient content",
+		"too short",
+		"incomplete",
+		"cannot create",
+		"need more information",
+	}
+
+	for _, phrase := range unavailablePhrases {
+		if len(summary) > 0 && len(summary) < 100 &&
+			(len(summary) < 50 || containsIgnoreCase(summary, phrase)) {
+			return "unavailable", nil
+		}
+	}
+
+	return summary, nil
+}
+
+// Helper function to check if a string contains a substring (case insensitive)
+func containsIgnoreCase(s, substr string) bool {
+	return len(s) >= len(substr) &&
+		(len(s) == len(substr) && s == substr ||
+			len(s) > len(substr) && (s[:len(substr)] == substr ||
+				s[len(s)-len(substr):] == substr ||
+				containsSubstring(s, substr)))
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
