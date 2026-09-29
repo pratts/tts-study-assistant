@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -25,4 +26,29 @@ func TestLoadFailsWithoutSecrets(t *testing.T) {
 	t.Setenv("JWT_SECRET", "")
 	_, err := Load()
 	assert.Error(t, err)
+}
+
+func TestLoadPoolSettings(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("JWT_SECRET", strings.Repeat("s", 32))
+	t.Setenv("DB_MAX_OPEN_CONNS", "")
+	t.Setenv("DB_CONN_MAX_LIFETIME", "")
+
+	cfg, err := Load()
+	assert.NoError(t, err)
+	assert.Equal(t, 25, cfg.DBMaxOpenConns)
+	assert.Equal(t, 30*time.Minute, cfg.DBConnMaxLifetime)
+
+	t.Setenv("DB_MAX_OPEN_CONNS", "50")
+	t.Setenv("DB_CONN_MAX_LIFETIME", "5m")
+	cfg, err = Load()
+	assert.NoError(t, err)
+	assert.Equal(t, 50, cfg.DBMaxOpenConns)
+	assert.Equal(t, 5*time.Minute, cfg.DBConnMaxLifetime)
+
+	t.Setenv("DB_MAX_OPEN_CONNS", "zero")
+	t.Setenv("DB_CONN_MAX_LIFETIME", "-1s")
+	_, err = Load()
+	assert.ErrorContains(t, err, "DB_MAX_OPEN_CONNS")
+	assert.ErrorContains(t, err, "DB_CONN_MAX_LIFETIME")
 }

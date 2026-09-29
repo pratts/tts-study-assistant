@@ -24,12 +24,14 @@ Go/Fiber REST API for authentication, notes, and user management.
      - `PORT` — (optional) API port (default: 3000)
      - `CORS_ORIGINS` — comma-separated allowed origins (default: `http://localhost:3000`)
      - `PROXY_HEADER` — (optional) client-IP header when behind a reverse proxy, e.g. `X-Forwarded-For`. Leave unset when the API is exposed directly, otherwise clients can spoof their IP and bypass rate limits.
+     - `DB_MAX_OPEN_CONNS` / `DB_MAX_IDLE_CONNS` — (optional) connection pool size (default: 25 / 10)
+     - `DB_CONN_MAX_LIFETIME` — (optional) recycle connections after this long (default: `30m`)
      - `OPENAI_API_KEY` — (optional) enables `POST /notes/{id}/summarize`; without it the endpoint returns 503
      - `OPENAI_MODEL` — (optional) chat model for summaries (default: `gpt-4o-mini`)
      - `OPENAI_BASE_URL` — (optional) OpenAI-compatible API base URL (default: `https://api.openai.com/v1`)
 
-3. **Run database migrations:**
-   (Describe migration tool or manual steps if any)
+3. **Database schema:**
+   Migrations run automatically on startup (GORM `AutoMigrate` plus a few idempotent data fixes in `internal/database`). No Postgres extensions are required.
 
 4. **Start the server:**
    ```sh
@@ -115,6 +117,20 @@ TEST_DATABASE_URL="postgres://localhost:5432/tts_test?sslmode=disable" go test .
 - `PUT /api/v1/notes/{id}` is a partial update: omitted fields are unchanged, `""` clears `source_url`/`source_title`/`domain`, and `"metadata": null` clears metadata. `content` cannot be empty.
 - `metadata` must be a JSON object and is returned exactly as stored.
 - When `domain` is omitted on create, it is derived from `source_url` using the public suffix list (`news.bbc.co.uk` → `bbc.co.uk`).
+
+## Database
+
+| Index | Serves |
+| ----- | ------ |
+| `notes (user_id, created_at DESC)` | the default notes list (no sort step) |
+| `notes (user_id, domain)` | `?domain=` filter and `/notes/stats` |
+| `notes (user_id, source_url)` | the extension's `?source_url=` lookup |
+| `refresh_tokens (token)` unique | refresh and logout lookups |
+| `refresh_tokens (user_id)` / `(expires_at)` | revoke-all on password change and hourly cleanup |
+
+- Deleting a user cascades to their notes and refresh tokens.
+- GORM runs with `SkipDefaultTransaction` (multi-step writes use explicit transactions) and `PrepareStmt`. If you put PgBouncer in transaction-pooling mode in front of Postgres, disable `PrepareStmt` in `database.GormConfig`.
+- `GET /notes` uses offset pagination. That is fine at current note counts; switch to keyset (`created_at`, `id`) pagination if users reach thousands of notes.
 
 ## Project layout
 
