@@ -1,9 +1,9 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
 	"strings"
 
@@ -185,25 +185,37 @@ func (s *NotesService) UpdateNote(noteID, userID string, req *UpdateNoteRequest)
 		}
 		return nil, err
 	}
-	// Update fields if provided
-	if req.Content != "" {
-		note.Content = req.Content
+	// Write only the provided columns so a concurrent summarize (or another
+	// edit) of a different column is not overwritten.
+	changes := map[string]any{}
+	if req.Content != "" && req.Content != note.Content {
+		note.Content, note.Summary = req.Content, ""
+		changes["content"], changes["summary"] = note.Content, "" // old summary is stale
 	}
 	if req.SourceURL != "" {
 		note.SourceURL = req.SourceURL
+		changes["source_url"] = note.SourceURL
 	}
 	if req.SourceTitle != "" {
 		note.SourceTitle = req.SourceTitle
+		changes["source_title"] = note.SourceTitle
 	}
 	if req.Domain != "" {
 		note.Domain = req.Domain
+		changes["domain"] = note.Domain
 	}
 	if req.Metadata != nil {
-		b, _ := json.Marshal(req.Metadata)
+		b, err := json.Marshal(req.Metadata)
+		if err != nil {
+			return nil, err
+		}
 		note.Metadata = datatypes.JSON(b)
+		changes["metadata"] = note.Metadata
 	}
-	if err := s.db.Save(&note).Error; err != nil {
-		return nil, err
+	if len(changes) > 0 {
+		if err := s.db.Model(&note).Updates(changes).Error; err != nil {
+			return nil, err
+		}
 	}
 	var respMetadata map[string]any
 	if len(note.Metadata) > 0 {
@@ -249,8 +261,10 @@ func (s *NotesService) GetNotesStats(userID string) ([]NotesStats, error) {
 	return stats, nil
 }
 
-// SummarizeNote summarizes a note's content and saves the summary
-func (s *NotesService) SummarizeNote(noteID, userID string, summarizer *SummarizerService) (string, error) {
+// SummarizeNote summarizes a note's content and saves the summary. Only the
+// summary column is written: the OpenAI call takes seconds, and a full-row
+// save would revert edits made in the meantime.
+func (s *NotesService) SummarizeNote(ctx context.Context, noteID, userID string, summarizer *SummarizerService) (string, error) {
 	var note models.Note
 	if err := s.db.Where("id = ? AND user_id = ?", noteID, userID).First(&note).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -258,14 +272,18 @@ func (s *NotesService) SummarizeNote(noteID, userID string, summarizer *Summariz
 		}
 		return "", err
 	}
-	fmt.Println("Note found: ", note)
-	summary, err := summarizer.Summarize(note.Content)
+	summary, err := summarizer.Summarize(ctx, note.Content)
 	if err != nil {
 		return "", err
 	}
-	note.Summary = summary
-	if err := s.db.Save(&note).Error; err != nil {
-		return "", err
+	res := s.db.Model(&models.Note{}).
+		Where("id = ? AND user_id = ? AND content = ?", noteID, userID, note.Content).
+		Update("summary", summary)
+	if res.Error != nil {
+		return "", res.Error
+	}
+	if res.RowsAffected == 0 {
+		return "", errors.New("note changed during summarization")
 	}
 	return summary, nil
 }

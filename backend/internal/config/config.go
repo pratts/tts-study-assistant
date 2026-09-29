@@ -15,6 +15,9 @@ type Config struct {
 	JWTRefreshSecret string
 	Port             string
 	CORSOrigins      []string
+	OpenAIAPIKey     string
+	OpenAIModel      string
+	OpenAIBaseURL    string
 }
 
 // minSecretLen is the minimum JWT secret length (256 bits for HS256).
@@ -33,6 +36,12 @@ func Load() (*Config, error) {
 		JWTRefreshSecret: getEnv("JWT_REFRESH_SECRET", ""),
 		Port:             getEnv("PORT", "3000"),
 		CORSOrigins:      strings.Split(getEnv("CORS_ORIGINS", "http://localhost:3000"), ","),
+		OpenAIAPIKey:     getEnv("OPENAI_API_KEY", ""),
+		OpenAIModel:      getEnv("OPENAI_MODEL", "gpt-4o-mini"),
+		OpenAIBaseURL:    getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+	}
+	if cfg.OpenAIAPIKey == "" {
+		log.Println("OPENAI_API_KEY not set: summarization is disabled")
 	}
 	return cfg, cfg.validate()
 }

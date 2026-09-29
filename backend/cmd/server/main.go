@@ -66,7 +66,9 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(cfg)
-	notesHandler := handlers.NewNotesHandler()
+	notesHandler := handlers.NewNotesHandler(
+		services.NewSummarizerService(cfg.OpenAIAPIKey, cfg.OpenAIModel, cfg.OpenAIBaseURL),
+	)
 	userHandler := handlers.NewUserHandler()
 
 	// API routes
