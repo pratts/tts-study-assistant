@@ -2,9 +2,13 @@ package services
 
 import (
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
+	"github.com/pratts/tts-study-assistant/backend/internal/tokens"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,4 +64,104 @@ func TestLoginUpgradesLegacyHash(t *testing.T) {
 
 	_, err = s.Login(&LoginRequest{Email: "old@example.com", Password: clientHash})
 	assert.NoError(t, err, "login must keep working after the upgrade")
+}
+
+func TestRefreshTokenStoredHashed(t *testing.T) {
+	db := setupDB(t)
+	resp := register(t, NewAuthService(testConfig), "a@example.com")
+
+	var rt models.RefreshToken
+	require.NoError(t, db.First(&rt, "user_id = ?", resp.User.ID).Error)
+	assert.NotEqual(t, resp.RefreshToken, rt.TokenHash)
+	assert.Equal(t, tokens.HashRefresh(resp.RefreshToken), rt.TokenHash)
+}
+
+func TestRefreshRotatesAndRejectsReuse(t *testing.T) {
+	setupDB(t)
+	s := NewAuthService(testConfig)
+	first := register(t, s, "a@example.com")
+
+	second, err := s.Refresh(&RefreshRequest{RefreshToken: first.RefreshToken})
+	require.NoError(t, err)
+	assert.NotEqual(t, first.RefreshToken, second.RefreshToken)
+
+	_, err = s.Refresh(&RefreshRequest{RefreshToken: first.RefreshToken})
+	assert.EqualError(t, err, "invalid refresh token", "a rotated token must not be reusable")
+
+	_, err = s.Refresh(&RefreshRequest{RefreshToken: second.RefreshToken})
+	assert.NoError(t, err)
+}
+
+func TestRefreshConcurrentUseSucceedsOnce(t *testing.T) {
+	setupDB(t)
+	s := NewAuthService(testConfig)
+	resp := register(t, s, "a@example.com")
+
+	const n = 8
+	var wg sync.WaitGroup
+	var successes atomic.Int32
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.Refresh(&RefreshRequest{RefreshToken: resp.RefreshToken}); err == nil {
+				successes.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	assert.EqualValues(t, 1, successes.Load())
+}
+
+func TestRefreshRejectsExpired(t *testing.T) {
+	db := setupDB(t)
+	s := NewAuthService(testConfig)
+	resp := register(t, s, "a@example.com")
+	db.Model(&models.RefreshToken{}).Where("user_id = ?", resp.User.ID).
+		Update("expires_at", time.Now().Add(-time.Minute))
+
+	_, err := s.Refresh(&RefreshRequest{RefreshToken: resp.RefreshToken})
+	assert.EqualError(t, err, "invalid refresh token")
+}
+
+func TestLoginSourceControlsLifetime(t *testing.T) {
+	db := setupDB(t)
+	s := NewAuthService(testConfig)
+	register(t, s, "a@example.com")
+
+	for source, ttl := range map[string]time.Duration{
+		"extension": 90 * 24 * time.Hour,
+		"bogus":     30 * 24 * time.Hour,
+	} {
+		resp, err := s.Login(&LoginRequest{Email: "a@example.com", Password: clientHash, Source: source})
+		require.NoError(t, err)
+		var rt models.RefreshToken
+		require.NoError(t, db.First(&rt, "token = ?", tokens.HashRefresh(resp.RefreshToken)).Error)
+		assert.WithinDuration(t, time.Now().Add(ttl), rt.ExpiresAt, time.Minute, source)
+	}
+}
+
+func TestLogoutRevokes(t *testing.T) {
+	setupDB(t)
+	s := NewAuthService(testConfig)
+	resp := register(t, s, "a@example.com")
+
+	require.NoError(t, s.Logout(resp.RefreshToken))
+	_, err := s.Refresh(&RefreshRequest{RefreshToken: resp.RefreshToken})
+	assert.Error(t, err)
+	assert.NoError(t, s.Logout("unknown"), "logout is idempotent")
+}
+
+func TestCleanupExpiredRefreshTokens(t *testing.T) {
+	db := setupDB(t)
+	s := NewAuthService(testConfig)
+	resp := register(t, s, "a@example.com")
+	register(t, s, "b@example.com")
+	db.Model(&models.RefreshToken{}).Where("user_id = ?", resp.User.ID).
+		Update("expires_at", time.Now().Add(-time.Minute))
+
+	require.NoError(t, s.CleanupExpiredRefreshTokens())
+	var n int64
+	db.Model(&models.RefreshToken{}).Count(&n)
+	assert.EqualValues(t, 1, n)
 }
