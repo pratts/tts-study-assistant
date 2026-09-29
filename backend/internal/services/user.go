@@ -74,6 +74,9 @@ func (s *UserService) UpdateProfile(userID string, req *UpdateProfileRequest) (*
 	}
 
 	if err := s.db.Save(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, errors.New("email already taken")
+		}
 		return nil, err
 	}
 

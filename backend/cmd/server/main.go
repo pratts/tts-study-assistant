@@ -7,6 +7,8 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/helmet"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
@@ -15,6 +17,15 @@ import (
 	"github.com/pratts/tts-study-assistant/backend/internal/handlers"
 	"github.com/pratts/tts-study-assistant/backend/internal/middleware"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
+)
+
+const (
+	// bodyLimit fits the largest accepted note (handlers.MaxContentRunes of
+	// 4-byte runes) plus JSON overhead.
+	bodyLimit = 512 * 1024
+
+	authRateLimit      = 10 // requests per minute per IP on login/register
+	summarizeRateLimit = 10 // requests per minute per user
 )
 
 func main() {
@@ -28,23 +39,7 @@ func main() {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
-	// Create fiber app
-	app := fiber.New(fiber.Config{
-		ErrorHandler: customErrorHandler,
-	})
-
-	// Middleware
-	app.Use(logger.New())
-	app.Use(recover.New())
-	app.Use(cors.New(cors.Config{
-		AllowOrigins:     strings.Join(cfg.CORSOrigins, ","),
-		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
-		AllowCredentials: true,
-	}))
-
-	// Routes
-	setupRoutes(app, cfg)
+	app := newApp(cfg)
 
 	go cleanupRefreshTokens(services.NewAuthService(cfg), time.Hour)
 
@@ -53,6 +48,33 @@ func main() {
 	if err := app.Listen(":" + cfg.Port); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
+}
+
+// newApp builds the HTTP server with middleware and routes.
+func newApp(cfg *config.Config) *fiber.App {
+	app := fiber.New(fiber.Config{
+		ErrorHandler: customErrorHandler,
+		BodyLimit:    bodyLimit,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 45 * time.Second, // summarize waits up to 30s on OpenAI
+		IdleTimeout:  60 * time.Second,
+		ProxyHeader:  cfg.ProxyHeader,
+	})
+
+	app.Use(recover.New())
+	app.Use(logger.New())
+	app.Use(helmet.New(helmet.Config{
+		// The API is called cross-origin by the web app and the extension.
+		CrossOriginResourcePolicy: "cross-origin",
+	}))
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: strings.Join(cfg.CORSOrigins, ","),
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
+	}))
+
+	setupRoutes(app, cfg)
+	return app
 }
 
 func setupRoutes(app *fiber.App, cfg *config.Config) {
@@ -71,13 +93,18 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	)
 	userHandler := handlers.NewUserHandler()
 
+	authLimit := rateLimit(authRateLimit, func(c *fiber.Ctx) string { return c.IP() })
+	summarizeLimit := rateLimit(summarizeRateLimit, func(c *fiber.Ctx) string {
+		return c.Locals("user_id").(string)
+	})
+
 	// API routes
 	api := app.Group("/api/v1")
 
 	// Auth routes (public)
 	auth := api.Group("/auth")
-	auth.Post("/register", authHandler.Register)
-	auth.Post("/login", authHandler.Login)
+	auth.Post("/register", authLimit, authHandler.Register)
+	auth.Post("/login", authLimit, authHandler.Login)
 	auth.Post("/refresh", authHandler.Refresh)
 	auth.Post("/logout", authHandler.Logout)
 	auth.Get("/verify", middleware.AuthMiddleware(cfg), authHandler.Verify)
@@ -93,13 +120,28 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	notes.Get("/:id", notesHandler.GetNote)
 	notes.Put("/:id", notesHandler.UpdateNote)
 	notes.Delete("/:id", notesHandler.DeleteNote)
-	notes.Post("/:id/summarize", notesHandler.SummarizeNote)
+	notes.Post("/:id/summarize", summarizeLimit, notesHandler.SummarizeNote)
 
 	// User routes (protected)
 	user := protected.Group("/user")
 	user.Get("/profile", userHandler.GetProfile)
 	user.Put("/profile", userHandler.UpdateProfile)
 	user.Put("/password", userHandler.UpdatePassword)
+}
+
+// rateLimit allows max requests per minute per key.
+func rateLimit(max int, key func(*fiber.Ctx) string) fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:          max,
+		Expiration:   time.Minute,
+		KeyGenerator: key,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error":   true,
+				"message": "Too many requests, please try again later",
+			})
+		},
+	})
 }
 
 // cleanupRefreshTokens periodically deletes expired refresh tokens.

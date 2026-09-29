@@ -23,7 +23,8 @@ func NewDB(t *testing.T) *gorm.DB {
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
-	cfg := &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
+	cfg := database.GormConfig()
+	cfg.Logger = logger.Default.LogMode(logger.Silent)
 
 	admin, err := gorm.Open(postgres.Open(dsn), cfg)
 	if err != nil {

@@ -22,6 +22,8 @@ Go/Fiber REST API for authentication, notes, and user management.
      - `DATABASE_URL` — PostgreSQL connection string
      - `JWT_SECRET` — Secret for signing JWTs, at least 32 characters (`openssl rand -hex 32`). The server refuses to start without it.
      - `PORT` — (optional) API port (default: 3000)
+     - `CORS_ORIGINS` — comma-separated allowed origins (default: `http://localhost:3000`)
+     - `PROXY_HEADER` — (optional) client-IP header when behind a reverse proxy, e.g. `X-Forwarded-For`. Leave unset when the API is exposed directly, otherwise clients can spoof their IP and bypass rate limits.
      - `OPENAI_API_KEY` — (optional) enables `POST /notes/{id}/summarize`; without it the endpoint returns 503
      - `OPENAI_MODEL` — (optional) chat model for summaries (default: `gpt-4o-mini`)
      - `OPENAI_BASE_URL` — (optional) OpenAI-compatible API base URL (default: `https://api.openai.com/v1`)
@@ -75,6 +77,23 @@ TEST_DATABASE_URL="postgres://localhost:5432/tts_test?sslmode=disable" go test .
 | 409 | Note changed during summarization; retry |
 | 502 | OpenAI call failed |
 | 503 | `OPENAI_API_KEY` not configured |
+
+## Limits
+
+| What | Limit |
+| ---- | ----- |
+| `POST /auth/login`, `POST /auth/register` | 10 requests / minute / IP → `429` |
+| `POST /notes/{id}/summarize` | 10 requests / minute / user → `429` |
+| Request body | 512 KB → `413` |
+| Note `content` | 100,000 characters |
+| `source_url` / `source_title` / `domain` | 2048 bytes / 512 characters / 253 bytes |
+| `page_size` on `GET /notes` | clamped to 1..100 |
+| Server timeouts | read 10s, write 45s, idle 60s |
+
+- Rate-limit counters are kept in memory per instance.
+- Note IDs that are not UUIDs return `400`.
+- Emails are trimmed and lower-cased on register, login and profile update. Existing mixed-case emails are normalized on startup unless that would collide with another account.
+- Responses carry security headers (`helmet`): `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, etc.
 
 ## Sessions and tokens
 

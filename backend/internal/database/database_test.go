@@ -29,3 +29,18 @@ func TestMigrateDropsPlaintextRefreshTokens(t *testing.T) {
 	require.Len(t, remaining, 1)
 	assert.Equal(t, hashed.TokenHash, remaining[0].TokenHash)
 }
+
+func TestMigrateLowercasesEmails(t *testing.T) {
+	db := testutil.NewDB(t)
+	mixed := models.User{Email: "Mixed@Example.com", Password: "x"}
+	clashA := models.User{Email: "Clash@Example.com", Password: "x"}
+	clashB := models.User{Email: "clash@example.com", Password: "x"}
+	require.NoError(t, db.Create(&[]models.User{mixed, clashA, clashB}).Error)
+
+	require.NoError(t, database.Migrate(db))
+
+	var emails []string
+	db.Model(&models.User{}).Pluck("email", &emails)
+	assert.ElementsMatch(t, []string{"Clash@Example.com", "clash@example.com", "mixed@example.com"}, emails,
+		"colliding rows are left untouched")
+}

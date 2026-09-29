@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -97,3 +98,17 @@ func TestUpdateNoteWritesOnlyProvidedColumns(t *testing.T) {
 	assert.Empty(t, stored.Summary, "changing content clears the stale summary")
 }
 
+func TestGetNotesClampsPageSize(t *testing.T) {
+	db := setupDB(t)
+	user := register(t, NewAuthService(testConfig), "a@example.com")
+	uid := uuid.MustParse(user.User.ID)
+	notes := make([]models.Note, MaxPageSize+5)
+	for i := range notes {
+		notes[i] = models.Note{UserID: uid, Content: "note"}
+	}
+	require.NoError(t, db.Create(&notes).Error)
+
+	got, err := NewNotesService().GetNotes(user.User.ID, 1, 1_000_000, "", "")
+	require.NoError(t, err)
+	assert.Len(t, got, MaxPageSize)
+}

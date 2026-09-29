@@ -70,6 +70,9 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 	}
 
 	if err := s.db.Create(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) { // lost a concurrent registration race
+			return nil, errors.New("user already exists")
+		}
 		return nil, err
 	}
 
