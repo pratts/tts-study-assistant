@@ -20,6 +20,11 @@ export function displayDomain(domain: string | undefined): string {
   return LOCAL_SOURCES.has(domain) ? 'Downloaded/Local file' : domain
 }
 
+/** Characters as a person counts them (code points, so emoji count once). */
+export function runeCount(text: string): number {
+  return [...text].length
+}
+
 export function truncate(text: string, max: number): string {
   const chars = [...text]
   return chars.length <= max ? text : chars.slice(0, max).join('') + '…'

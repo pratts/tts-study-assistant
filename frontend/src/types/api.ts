@@ -237,7 +237,7 @@ export interface components {
              * @default web
              * @enum {string}
              */
-            source: "web" | "extension";
+            source?: "web" | "extension";
         };
         AuthResponse: {
             access_token: string;
