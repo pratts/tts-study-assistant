@@ -36,7 +36,27 @@ Go/Fiber REST API for authentication, notes, and user management.
 - OpenAPI spec: [`openapi.json`](./openapi.json)
 - All endpoints require JWT Bearer token (except /auth/\*)
 
+## Testing
+
+```sh
+go test ./...
+```
+
+Service tests need a Postgres database; they are skipped when `TEST_DATABASE_URL` is unset. Each test runs in its own schema, which is dropped afterwards.
+
+```sh
+createdb tts_test
+psql -d tts_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+TEST_DATABASE_URL="postgres://localhost:5432/tts_test?sslmode=disable" go test ./...
+```
+
+## Password handling
+
+- Clients (web app and extension) send a SHA-256 hex digest of the password, never the raw password.
+- The server hashes that digest with **bcrypt** before storing it. The stored value cannot be replayed as a credential.
+- Rows created before bcrypt was introduced are upgraded transparently on the user's next successful login.
+- Passwords change only through `PUT /api/v1/user/password`, which verifies the current password and revokes every refresh token (all other sessions are logged out). `PUT /api/v1/user/profile` does not accept a password.
+
 ## Notes
 
-- Passwords must be pre-hashed (SHA-256) by the client.
 - See `/internal/models/` for data models.

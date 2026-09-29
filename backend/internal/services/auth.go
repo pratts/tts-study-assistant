@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"log"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -9,6 +10,7 @@ import (
 	"github.com/pratts/tts-study-assistant/backend/internal/config"
 	"github.com/pratts/tts-study-assistant/backend/internal/database"
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
+	"github.com/pratts/tts-study-assistant/backend/internal/password"
 	"gorm.io/gorm"
 )
 
@@ -64,10 +66,13 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		return nil, errors.New("user already exists")
 	}
 
-	// Create user with pre-hashed password
+	hash, err := password.Hash(req.Password)
+	if err != nil {
+		return nil, err
+	}
 	user := models.User{
 		Email:    req.Email,
-		Password: req.Password, // Store the pre-hashed password directly
+		Password: hash,
 		Name:     req.Name,
 	}
 
@@ -102,14 +107,18 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	var user models.User
 	if err := s.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			password.SimulateVerify(req.Password)
 			return nil, errors.New("invalid credentials")
 		}
 		return nil, err
 	}
 
-	// Compare pre-hashed passwords directly
-	if user.Password != req.Password {
+	ok, needsRehash := password.Verify(user.Password, req.Password)
+	if !ok {
 		return nil, errors.New("invalid credentials")
+	}
+	if needsRehash {
+		s.upgradePasswordHash(&user, req.Password)
 	}
 
 	source := req.Source
@@ -137,6 +146,18 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 	response.User.Name = user.Name
 
 	return response, nil
+}
+
+// upgradePasswordHash replaces a legacy password value with a bcrypt hash.
+// A failure is logged but does not block the login; it is retried next time.
+func (s *AuthService) upgradePasswordHash(user *models.User, secret string) {
+	hash, err := password.Hash(secret)
+	if err == nil {
+		err = s.db.Model(user).Update("password", hash).Error
+	}
+	if err != nil {
+		log.Printf("password hash upgrade failed for user %s: %v", user.ID, err)
+	}
 }
 
 func (s *AuthService) Refresh(req *RefreshRequest) (*AuthResponse, error) {

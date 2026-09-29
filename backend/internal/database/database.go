@@ -20,16 +20,19 @@ func Connect(databaseURL string) error {
 
 	log.Println("Database connected successfully")
 
-	// Auto migrate the schema
-	err = DB.AutoMigrate(
-		&models.User{},
-		&models.Note{},
-		&models.RefreshToken{},
-	)
-	if err != nil {
+	if err := Migrate(DB); err != nil {
 		return err
 	}
 
 	log.Println("Database migrated successfully")
 	return nil
+}
+
+// Migrate creates or updates the schema for all models.
+func Migrate(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&models.User{},
+		&models.Note{},
+		&models.RefreshToken{},
+	)
 }
