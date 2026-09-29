@@ -240,9 +240,9 @@ export interface components {
             source: "web" | "extension";
         };
         AuthResponse: {
-            access_token?: string;
-            refresh_token?: string;
-            user?: components["schemas"]["UserProfile"];
+            access_token: string;
+            refresh_token: string;
+            user: components["schemas"]["UserProfile"];
         };
         RefreshRequest: {
             /** @description Single use; rotated on every refresh */
@@ -250,8 +250,8 @@ export interface components {
         };
         Note: {
             /** Format: uuid */
-            id?: string;
-            content?: string;
+            id: string;
+            content: string;
             source_url?: string;
             source_title?: string;
             /** @description Registrable domain, derived from source_url when not given (news.bbc.co.uk → bbc.co.uk) */
@@ -261,9 +261,9 @@ export interface components {
             /** @description AI summary, or "unavailable" when the text could not be summarized. Cleared when content changes. */
             summary?: string;
             /** Format: date-time */
-            created_at?: string;
+            created_at: string;
             /** Format: date-time */
-            updated_at?: string;
+            updated_at: string;
         };
         CreateNoteRequest: {
             content: string;
@@ -284,10 +284,10 @@ export interface components {
         };
         UserProfile: {
             /** Format: uuid */
-            id?: string;
+            id: string;
             /** Format: email */
-            email?: string;
-            name?: string;
+            email: string;
+            name: string;
         };
         /** @description Passwords cannot be changed here; use PUT /user/password. */
         UpdateProfileRequest: {
@@ -297,8 +297,8 @@ export interface components {
         };
         ErrorResponse: {
             /** @example true */
-            error?: boolean;
-            message?: string;
+            error: boolean;
+            message: string;
             /** @description TOKEN_EXPIRED on every 401 from an authenticated endpoint */
             code?: string;
         };
@@ -309,16 +309,16 @@ export interface components {
             new_password: string;
         };
         NotesStats: {
-            domain?: string;
-            count?: number;
+            domain: string;
+            count: number;
         };
         SummaryResponse: {
             /** @description The summary, or "unavailable" */
-            summary?: string;
+            summary: string;
         };
         SuccessResponse: {
             /** @example true */
-            success?: boolean;
+            success: boolean;
             message?: string;
             data?: unknown;
         };
@@ -351,7 +351,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["AuthResponse"];
+                        data: components["schemas"]["AuthResponse"];
                     };
                 };
             };
@@ -404,7 +404,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["AuthResponse"];
+                        data: components["schemas"]["AuthResponse"];
                     };
                 };
             };
@@ -457,7 +457,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["AuthResponse"];
+                        data: components["schemas"]["AuthResponse"];
                     };
                 };
             };
@@ -567,7 +567,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["Note"][];
+                        data: components["schemas"]["Note"][];
                     };
                 };
             };
@@ -602,7 +602,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["Note"];
+                        data: components["schemas"]["Note"];
                     };
                 };
             };
@@ -651,7 +651,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["NotesStats"][];
+                        data: components["schemas"]["NotesStats"][];
                     };
                 };
             };
@@ -684,7 +684,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["Note"];
+                        data: components["schemas"]["Note"];
                     };
                 };
             };
@@ -739,7 +739,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["Note"];
+                        data: components["schemas"]["Note"];
                     };
                 };
             };
@@ -839,7 +839,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["SummaryResponse"];
+                        data: components["schemas"]["SummaryResponse"];
                     };
                 };
             };
@@ -924,7 +924,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["UserProfile"];
+                        data: components["schemas"]["UserProfile"];
                     };
                 };
             };
@@ -968,7 +968,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuccessResponse"] & {
-                        data?: components["schemas"]["UserProfile"];
+                        data: components["schemas"]["UserProfile"];
                     };
                 };
             };
