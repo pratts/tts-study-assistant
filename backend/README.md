@@ -65,15 +65,16 @@ TEST_DATABASE_URL="postgres://localhost:5432/tts_test?sslmode=disable" go test -
 
 ## CI
 
-`.github/workflows/backend-ci.yml` runs on every pull request and push to `main` that touches `backend/`, and weekly to pick up newly published advisories:
+`.github/workflows/backend-ci.yml` runs on every pull request, on pushes to `main` that touch `backend/`, and weekly to pick up newly published advisories:
 
 | Job | Checks |
 | --- | ------ |
+| Detect backend changes | on PRs, runs the jobs below only when `backend/` or the workflow changed |
 | Build & lint | `go mod verify`, `go mod tidy -diff`, `gofmt`, `go vet`, `go build` |
 | Test | `go test -race` against a Postgres 16 service container; coverage in the job summary |
 | Vulnerability scan | `govulncheck`: fails when code reaches a known-vulnerable symbol |
 | Docker image | builds the production image |
-| **Backend CI passed** | aggregate status: require this check before merging or deploying |
+| **Backend CI passed** | aggregate status, required on `main`. It passes when every job passed or was skipped (PRs without backend changes) and fails otherwise |
 
 Run the same checks locally:
 

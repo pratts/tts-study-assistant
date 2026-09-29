@@ -6,8 +6,10 @@ on:
   push:
     branches: [main]
     paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+  # Every PR runs the workflow so the required "Backend CI passed" check
+  # always reports; the changes job skips the real work when backend/ is
+  # untouched.
   pull_request:
-    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
   schedule:
     - cron: "0 6 * * 1" # weekly: catch newly published vulnerabilities
   workflow_dispatch:
@@ -27,9 +29,35 @@ env:
   GO_VERSION: "1.26.x"
 
 jobs:
+  changes:
+    name: Detect backend changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2 # the PR merge commit and its base parent
+      - id: filter
+        name: Diff against base
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only HEAD^1 HEAD | grep -qE '^(backend/|\.github/workflows/backend-ci\.yml$)'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+            echo "No backend changes: build, test, scan and image jobs skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build:
     name: Build & lint
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -53,6 +81,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     services:
       postgres:
         image: postgres:16-alpine
@@ -92,6 +122,8 @@ jobs:
   vulnerabilities:
     name: Vulnerability scan
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -123,10 +155,12 @@ jobs:
           cache-to: type=gha,mode=max
 
   # Single status to require in branch protection / deployment rules.
+  # Skipped jobs (no backend changes) count as passing; failed or cancelled
+  # ones, including the changes job itself, fail the check.
   ci-passed:
     name: Backend CI passed
     runs-on: ubuntu-latest
-    needs: [build, test, vulnerabilities, docker]
+    needs: [changes, build, test, vulnerabilities, docker]
     if: always()
     defaults:
       run:
