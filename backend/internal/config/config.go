@@ -2,9 +2,12 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -21,6 +24,10 @@ type Config struct {
 	// when running behind a reverse proxy. Leave empty when exposed directly,
 	// otherwise clients can spoof their IP and dodge rate limits.
 	ProxyHeader string
+
+	DBMaxOpenConns    int
+	DBMaxIdleConns    int
+	DBConnMaxLifetime time.Duration
 }
 
 // minSecretLen is the minimum JWT secret length (256 bits for HS256).
@@ -33,20 +40,24 @@ func Load() (*Config, error) {
 		slog.Info("no .env file found, using environment only")
 	}
 
+	var errs []error
 	cfg := &Config{
-		DatabaseURL:   getEnv("DATABASE_URL", ""),
-		JWTSecret:     getEnv("JWT_SECRET", ""),
-		Port:          getEnv("PORT", "3000"),
-		CORSOrigins:   strings.Split(getEnv("CORS_ORIGINS", "http://localhost:3000"), ","),
-		OpenAIAPIKey:  getEnv("OPENAI_API_KEY", ""),
-		OpenAIModel:   getEnv("OPENAI_MODEL", "gpt-4o-mini"),
-		OpenAIBaseURL: getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		ProxyHeader:   getEnv("PROXY_HEADER", ""),
+		DatabaseURL:       getEnv("DATABASE_URL", ""),
+		JWTSecret:         getEnv("JWT_SECRET", ""),
+		Port:              getEnv("PORT", "3000"),
+		CORSOrigins:       strings.Split(getEnv("CORS_ORIGINS", "http://localhost:3000"), ","),
+		OpenAIAPIKey:      getEnv("OPENAI_API_KEY", ""),
+		OpenAIModel:       getEnv("OPENAI_MODEL", "gpt-4o-mini"),
+		OpenAIBaseURL:     getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		ProxyHeader:       getEnv("PROXY_HEADER", ""),
+		DBMaxOpenConns:    getInt("DB_MAX_OPEN_CONNS", 25, &errs),
+		DBMaxIdleConns:    getInt("DB_MAX_IDLE_CONNS", 10, &errs),
+		DBConnMaxLifetime: getDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute, &errs),
 	}
 	if cfg.OpenAIAPIKey == "" {
 		slog.Warn("OPENAI_API_KEY not set: summarization is disabled")
 	}
-	return cfg, cfg.validate()
+	return cfg, errors.Join(append(errs, cfg.validate())...)
 }
 
 func (c *Config) validate() error {
@@ -65,4 +76,30 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func getInt(key string, def int, errs *[]error) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		*errs = append(*errs, fmt.Errorf("%s must be a positive integer", key))
+		return def
+	}
+	return n
+}
+
+func getDuration(key string, def time.Duration, errs *[]error) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		*errs = append(*errs, fmt.Errorf("%s must be a positive duration such as 30m", key))
+		return def
+	}
+	return d
 }

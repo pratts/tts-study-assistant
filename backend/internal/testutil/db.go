@@ -56,7 +56,7 @@ func NewDB(t *testing.T) *gorm.DB {
 }
 
 func withSearchPath(t *testing.T, dsn, schema string) string {
-	path := schema + ",public"
+	path := schema // no public: the schema must not depend on extensions
 	if !strings.Contains(dsn, "://") {
 		return dsn + " search_path=" + path
 	}
