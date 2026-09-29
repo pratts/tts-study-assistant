@@ -1,38 +1,25 @@
-# ---- Build Stage ----
-FROM golang:1.24 as builder
+# ---- Build ----
+FROM golang:1.24 AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-# Copy go mod and sum files
+# Cache dependencies separately from the source.
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the source code
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
-# Build the Go app
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server/main.go
+# ---- Run ----
+# Static distroless image: no shell or package manager, runs as an
+# unprivileged user.
+FROM gcr.io/distroless/static-debian12:nonroot
 
-# ---- Run Stage ----
-FROM gcr.io/distroless/base-debian12
+COPY --from=builder /out/server /server
 
-WORKDIR /app
-
-# Copy the built binary from builder
-COPY --from=builder /app/server ./server
-
-# Copy any migrations or static files if needed (uncomment if you have them)
-# COPY --from=builder /app/migrations ./migrations
-# COPY --from=builder /app/static ./static
-
-# Expose the port the app runs on
 EXPOSE 3000
+USER nonroot:nonroot
 
-# Set environment variables (override in deployment)
-# ENV DATABASE_URL=postgres://user:pass@host:port/dbname
-# ENV JWT_SECRET=your-secret
-# ENV JWT_REFRESH_SECRET=your-refresh-secret
-# ENV PORT=3000
-
-# Run the server binary
-ENTRYPOINT ["/app/server"] 
+# Configure via environment variables (see README): DATABASE_URL,
+# JWT_SECRET, PORT, CORS_ORIGINS, OPENAI_API_KEY, ...
+ENTRYPOINT ["/server"]
