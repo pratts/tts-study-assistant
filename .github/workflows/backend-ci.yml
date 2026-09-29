@@ -76,7 +76,7 @@ jobs:
           check-latest: true
           cache-dependency-path: backend/go.sum
       - name: Test (race detector, Postgres)
-        run: go test -race -count=1 -timeout 5m -coverprofile=coverage.out ./...
+        run: go test -race -count=1 -timeout 5m -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Coverage summary
         run: |
           echo "### Backend coverage" >> "$GITHUB_STEP_SUMMARY"
