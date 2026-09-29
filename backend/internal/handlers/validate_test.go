@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -22,6 +23,15 @@ func TestNormalizeEmail(t *testing.T) {
 	}
 }
 
+func TestNoteMetadataValidation(t *testing.T) {
+	for _, ok := range []string{"", "null", `{}`, `{"lang":"en"}`} {
+		assert.Empty(t, noteFieldsError("c", "", "", "", json.RawMessage(ok)), ok)
+	}
+	for _, bad := range []string{`[1,2]`, `"str"`, `42`, `{"a":`} {
+		assert.NotEmpty(t, noteFieldsError("c", "", "", "", json.RawMessage(bad)), bad)
+	}
+}
+
 func TestValidPassword(t *testing.T) {
 	assert.True(t, validPassword(strings.Repeat("a", 64)))
 	assert.False(t, validPassword(""))
@@ -29,9 +39,9 @@ func TestValidPassword(t *testing.T) {
 }
 
 func TestNoteFieldsError(t *testing.T) {
-	assert.Empty(t, noteFieldsError("content", "https://x.com", "title", "x.com"))
-	assert.NotEmpty(t, noteFieldsError(strings.Repeat("é", MaxContentRunes+1), "", "", ""))
-	assert.NotEmpty(t, noteFieldsError("", strings.Repeat("a", maxURLLen+1), "", ""))
-	assert.NotEmpty(t, noteFieldsError("", "", strings.Repeat("a", maxTitleRunes+1), ""))
-	assert.NotEmpty(t, noteFieldsError("", "", "", strings.Repeat("a", maxDomainLen+1)))
+	assert.Empty(t, noteFieldsError("content", "https://x.com", "title", "x.com", json.RawMessage(`{"a":1}`)))
+	assert.NotEmpty(t, noteFieldsError(strings.Repeat("é", MaxContentRunes+1), "", "", "", nil))
+	assert.NotEmpty(t, noteFieldsError("", strings.Repeat("a", maxURLLen+1), "", "", nil))
+	assert.NotEmpty(t, noteFieldsError("", "", strings.Repeat("a", maxTitleRunes+1), "", nil))
+	assert.NotEmpty(t, noteFieldsError("", "", "", strings.Repeat("a", maxDomainLen+1), nil))
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,9 +15,6 @@ import (
 // SummaryUnavailable is returned (and stored) when the text is too short or
 // incomplete to summarize. The web app and extension check for this value.
 const SummaryUnavailable = "unavailable"
-
-// ErrSummarizerDisabled is returned when no OpenAI API key is configured.
-var ErrSummarizerDisabled = errors.New("summarizer is not configured")
 
 const (
 	minSummaryInputRunes = 20
@@ -105,21 +101,21 @@ func (s *SummarizerService) Summarize(ctx context.Context, text string) (string,
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", ErrSummarizerUpstream, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return "", fmt.Errorf("openai: status %d: %s", resp.StatusCode, msg)
+		return "", fmt.Errorf("%w: status %d: %s", ErrSummarizerUpstream, resp.StatusCode, msg)
 	}
 
 	var result chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("openai: decode response: %w", err)
+		return "", fmt.Errorf("%w: decode response: %w", ErrSummarizerUpstream, err)
 	}
 	if len(result.Choices) == 0 {
-		return "", errors.New("openai: no choices returned")
+		return "", fmt.Errorf("%w: no choices returned", ErrSummarizerUpstream)
 	}
 
 	summary := strings.TrimSpace(result.Choices[0].Message.Content)

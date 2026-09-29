@@ -1,31 +1,21 @@
 package database
 
 import (
-	"log"
-
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-var DB *gorm.DB
-
-func Connect(databaseURL string) error {
-	var err error
-
-	DB, err = gorm.Open(postgres.Open(databaseURL), GormConfig())
+// Connect opens the database and migrates the schema.
+func Connect(databaseURL string) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(databaseURL), GormConfig())
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	log.Println("Database connected successfully")
-
-	if err := Migrate(DB); err != nil {
-		return err
+	if err := Migrate(db); err != nil {
+		return nil, err
 	}
-
-	log.Println("Database migrated successfully")
-	return nil
+	return db, nil
 }
 
 // GormConfig returns the GORM settings shared by the server and tests.

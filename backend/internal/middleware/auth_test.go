@@ -2,11 +2,11 @@ package middleware
 
 import (
 	"encoding/json"
+	"io"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/pratts/tts-study-assistant/backend/internal/config"
 	"github.com/pratts/tts-study-assistant/backend/internal/tokens"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,8 +14,8 @@ import (
 
 func newApp() *fiber.App {
 	app := fiber.New()
-	app.Get("/", AuthMiddleware(&config.Config{JWTSecret: "test-secret"}), func(c *fiber.Ctx) error {
-		return c.SendString(c.Locals("user_id").(string))
+	app.Get("/", Auth("test-secret"), func(c *fiber.Ctx) error {
+		return c.SendString(UserID(c).String())
 	})
 	return app
 }
@@ -35,12 +35,19 @@ func do(t *testing.T, app *fiber.App, auth string) (int, map[string]any) {
 
 func TestAuthMiddleware(t *testing.T) {
 	app := newApp()
-	valid, err := tokens.IssueAccess("test-secret", "user-1", "a@example.com", tokens.SourceWeb)
+	const uid = "3f2b8c1e-4d5a-4b6c-8d7e-9f0a1b2c3d4e"
+	valid, err := tokens.IssueAccess("test-secret", uid, "a@example.com", tokens.SourceWeb)
 	require.NoError(t, err)
-	forged, _ := tokens.IssueAccess("other-secret", "user-1", "a@example.com", tokens.SourceWeb)
+	forged, _ := tokens.IssueAccess("other-secret", uid, "a@example.com", tokens.SourceWeb)
+	badSubject, _ := tokens.IssueAccess("test-secret", "not-a-uuid", "a@example.com", tokens.SourceWeb)
 
-	status, _ := do(t, app, "Bearer "+valid)
-	assert.Equal(t, fiber.StatusOK, status)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+valid)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Equal(t, uid, string(body), "handler sees the typed user ID")
 
 	for name, header := range map[string]string{
 		"missing":      "",
@@ -48,6 +55,7 @@ func TestAuthMiddleware(t *testing.T) {
 		"empty bearer": "Bearer ",
 		"forged":       "Bearer " + forged,
 		"garbage":      "Bearer not-a-jwt",
+		"bad subject":  "Bearer " + badSubject,
 	} {
 		status, body := do(t, app, header)
 		assert.Equal(t, fiber.StatusUnauthorized, status, name)

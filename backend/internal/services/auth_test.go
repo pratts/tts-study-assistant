@@ -13,89 +13,120 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const clientHash = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"
-
-func register(t *testing.T, s *AuthService, email string) *AuthResponse {
-	t.Helper()
-	resp, err := s.Register(&RegisterRequest{Email: email, Password: clientHash, Name: "Test"})
-	require.NoError(t, err)
-	return resp
-}
-
 func TestRegisterStoresBcryptHash(t *testing.T) {
-	db := setupDB(t)
-	s := NewAuthService(testConfig)
-	register(t, s, "a@example.com")
+	e := newEnv(t)
+	e.register(t, "a@example.com")
 
 	var u models.User
-	require.NoError(t, db.Where("email = ?", "a@example.com").First(&u).Error)
+	require.NoError(t, e.db.Where("email = ?", "a@example.com").First(&u).Error)
 	assert.NotEqual(t, clientHash, u.Password)
 	assert.True(t, strings.HasPrefix(u.Password, "$2"), "password must be bcrypt-hashed")
 }
 
-func TestLogin(t *testing.T) {
-	setupDB(t)
-	s := NewAuthService(testConfig)
-	register(t, s, "a@example.com")
+func TestRegisterDuplicate(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "a@example.com")
+	_, err := e.auth.Register(ctx, &RegisterRequest{Email: "a@example.com", Password: clientHash, Name: "Again"})
+	assert.ErrorIs(t, err, ErrUserExists)
+}
 
-	resp, err := s.Login(&LoginRequest{Email: "a@example.com", Password: clientHash})
+func TestRegisterConcurrentDuplicate(t *testing.T) {
+	e := newEnv(t)
+	const n = 6
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			_, err := e.auth.Register(ctx, &RegisterRequest{Email: "race@example.com", Password: clientHash, Name: "R"})
+			errs <- err
+		}()
+	}
+	ok := 0
+	for range n {
+		if err := <-errs; err == nil {
+			ok++
+		} else {
+			assert.ErrorIs(t, err, ErrUserExists, "race losers must get a conflict, not a 500")
+		}
+	}
+	assert.Equal(t, 1, ok)
+}
+
+func TestLogin(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "a@example.com")
+
+	resp, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: clientHash})
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp.AccessToken)
+	assert.Equal(t, "a@example.com", resp.User.Email)
 
-	_, err = s.Login(&LoginRequest{Email: "a@example.com", Password: "wrong"})
-	assert.EqualError(t, err, "invalid credentials")
+	_, err = e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: "wrong"})
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
 
-	_, err = s.Login(&LoginRequest{Email: "missing@example.com", Password: clientHash})
-	assert.EqualError(t, err, "invalid credentials")
+	_, err = e.auth.Login(ctx, &LoginRequest{Email: "missing@example.com", Password: clientHash})
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
 }
 
 func TestLoginUpgradesLegacyHash(t *testing.T) {
-	db := setupDB(t)
+	e := newEnv(t)
 	legacy := models.User{Email: "old@example.com", Password: clientHash, Name: "Old"}
-	require.NoError(t, db.Create(&legacy).Error)
+	require.NoError(t, e.db.Create(&legacy).Error)
 
-	s := NewAuthService(testConfig)
-	_, err := s.Login(&LoginRequest{Email: "old@example.com", Password: clientHash})
+	_, err := e.auth.Login(ctx, &LoginRequest{Email: "old@example.com", Password: clientHash})
 	require.NoError(t, err)
 
 	var u models.User
-	require.NoError(t, db.First(&u, "id = ?", legacy.ID).Error)
+	require.NoError(t, e.db.First(&u, "id = ?", legacy.ID).Error)
 	assert.True(t, strings.HasPrefix(u.Password, "$2"), "legacy hash must be upgraded on login")
 
-	_, err = s.Login(&LoginRequest{Email: "old@example.com", Password: clientHash})
+	_, err = e.auth.Login(ctx, &LoginRequest{Email: "old@example.com", Password: clientHash})
 	assert.NoError(t, err, "login must keep working after the upgrade")
 }
 
+func TestLoginSourceControlsLifetime(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "a@example.com")
+
+	for source, ttl := range map[string]time.Duration{
+		"extension": 90 * 24 * time.Hour,
+		"bogus":     30 * 24 * time.Hour,
+	} {
+		resp, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: clientHash, Source: source})
+		require.NoError(t, err)
+		var rt models.RefreshToken
+		require.NoError(t, e.db.First(&rt, "token = ?", tokens.HashRefresh(resp.RefreshToken)).Error)
+		assert.WithinDuration(t, time.Now().Add(ttl), rt.ExpiresAt, time.Minute, source)
+	}
+}
+
 func TestRefreshTokenStoredHashed(t *testing.T) {
-	db := setupDB(t)
-	resp := register(t, NewAuthService(testConfig), "a@example.com")
+	e := newEnv(t)
+	resp, uid := e.register(t, "a@example.com")
 
 	var rt models.RefreshToken
-	require.NoError(t, db.First(&rt, "user_id = ?", resp.User.ID).Error)
+	require.NoError(t, e.db.First(&rt, "user_id = ?", uid).Error)
 	assert.NotEqual(t, resp.RefreshToken, rt.TokenHash)
 	assert.Equal(t, tokens.HashRefresh(resp.RefreshToken), rt.TokenHash)
 }
 
 func TestRefreshRotatesAndRejectsReuse(t *testing.T) {
-	setupDB(t)
-	s := NewAuthService(testConfig)
-	first := register(t, s, "a@example.com")
+	e := newEnv(t)
+	first, _ := e.register(t, "a@example.com")
 
-	second, err := s.Refresh(&RefreshRequest{RefreshToken: first.RefreshToken})
+	second, err := e.auth.Refresh(ctx, first.RefreshToken)
 	require.NoError(t, err)
 	assert.NotEqual(t, first.RefreshToken, second.RefreshToken)
 
-	_, err = s.Refresh(&RefreshRequest{RefreshToken: first.RefreshToken})
-	assert.EqualError(t, err, "invalid refresh token", "a rotated token must not be reusable")
+	_, err = e.auth.Refresh(ctx, first.RefreshToken)
+	assert.ErrorIs(t, err, ErrInvalidRefreshToken, "a rotated token must not be reusable")
 
-	_, err = s.Refresh(&RefreshRequest{RefreshToken: second.RefreshToken})
+	_, err = e.auth.Refresh(ctx, second.RefreshToken)
 	assert.NoError(t, err)
 }
 
 func TestRefreshConcurrentUseSucceedsOnce(t *testing.T) {
-	setupDB(t)
-	s := NewAuthService(testConfig)
-	resp := register(t, s, "a@example.com")
+	e := newEnv(t)
+	resp, _ := e.register(t, "a@example.com")
 
 	const n = 8
 	var wg sync.WaitGroup
@@ -104,7 +135,7 @@ func TestRefreshConcurrentUseSucceedsOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := s.Refresh(&RefreshRequest{RefreshToken: resp.RefreshToken}); err == nil {
+			if _, err := e.auth.Refresh(ctx, resp.RefreshToken); err == nil {
 				successes.Add(1)
 			}
 		}()
@@ -114,85 +145,32 @@ func TestRefreshConcurrentUseSucceedsOnce(t *testing.T) {
 }
 
 func TestRefreshRejectsExpired(t *testing.T) {
-	db := setupDB(t)
-	s := NewAuthService(testConfig)
-	resp := register(t, s, "a@example.com")
-	db.Model(&models.RefreshToken{}).Where("user_id = ?", resp.User.ID).
-		Update("expires_at", time.Now().Add(-time.Minute))
+	e := newEnv(t)
+	resp, uid := e.register(t, "a@example.com")
+	e.db.Model(&models.RefreshToken{}).Where("user_id = ?", uid).Update("expires_at", time.Now().Add(-time.Minute))
 
-	_, err := s.Refresh(&RefreshRequest{RefreshToken: resp.RefreshToken})
-	assert.EqualError(t, err, "invalid refresh token")
-}
-
-func TestLoginSourceControlsLifetime(t *testing.T) {
-	db := setupDB(t)
-	s := NewAuthService(testConfig)
-	register(t, s, "a@example.com")
-
-	for source, ttl := range map[string]time.Duration{
-		"extension": 90 * 24 * time.Hour,
-		"bogus":     30 * 24 * time.Hour,
-	} {
-		resp, err := s.Login(&LoginRequest{Email: "a@example.com", Password: clientHash, Source: source})
-		require.NoError(t, err)
-		var rt models.RefreshToken
-		require.NoError(t, db.First(&rt, "token = ?", tokens.HashRefresh(resp.RefreshToken)).Error)
-		assert.WithinDuration(t, time.Now().Add(ttl), rt.ExpiresAt, time.Minute, source)
-	}
+	_, err := e.auth.Refresh(ctx, resp.RefreshToken)
+	assert.ErrorIs(t, err, ErrInvalidRefreshToken)
 }
 
 func TestLogoutRevokes(t *testing.T) {
-	setupDB(t)
-	s := NewAuthService(testConfig)
-	resp := register(t, s, "a@example.com")
+	e := newEnv(t)
+	resp, _ := e.register(t, "a@example.com")
 
-	require.NoError(t, s.Logout(resp.RefreshToken))
-	_, err := s.Refresh(&RefreshRequest{RefreshToken: resp.RefreshToken})
-	assert.Error(t, err)
-	assert.NoError(t, s.Logout("unknown"), "logout is idempotent")
+	require.NoError(t, e.auth.Logout(ctx, resp.RefreshToken))
+	_, err := e.auth.Refresh(ctx, resp.RefreshToken)
+	assert.ErrorIs(t, err, ErrInvalidRefreshToken)
+	assert.NoError(t, e.auth.Logout(ctx, "unknown"), "logout is idempotent")
 }
 
 func TestCleanupExpiredRefreshTokens(t *testing.T) {
-	db := setupDB(t)
-	s := NewAuthService(testConfig)
-	resp := register(t, s, "a@example.com")
-	register(t, s, "b@example.com")
-	db.Model(&models.RefreshToken{}).Where("user_id = ?", resp.User.ID).
-		Update("expires_at", time.Now().Add(-time.Minute))
+	e := newEnv(t)
+	_, uid := e.register(t, "a@example.com")
+	e.register(t, "b@example.com")
+	e.db.Model(&models.RefreshToken{}).Where("user_id = ?", uid).Update("expires_at", time.Now().Add(-time.Minute))
 
-	require.NoError(t, s.CleanupExpiredRefreshTokens())
+	require.NoError(t, e.auth.CleanupExpiredRefreshTokens(ctx))
 	var n int64
-	db.Model(&models.RefreshToken{}).Count(&n)
+	e.db.Model(&models.RefreshToken{}).Count(&n)
 	assert.EqualValues(t, 1, n)
-}
-
-func TestRegisterDuplicate(t *testing.T) {
-	setupDB(t)
-	s := NewAuthService(testConfig)
-	register(t, s, "a@example.com")
-	_, err := s.Register(&RegisterRequest{Email: "a@example.com", Password: clientHash, Name: "Again"})
-	assert.EqualError(t, err, "user already exists")
-}
-
-func TestRegisterConcurrentDuplicate(t *testing.T) {
-	setupDB(t)
-	s := NewAuthService(testConfig)
-
-	const n = 6
-	errs := make(chan error, n)
-	for range n {
-		go func() {
-			_, err := s.Register(&RegisterRequest{Email: "race@example.com", Password: clientHash, Name: "R"})
-			errs <- err
-		}()
-	}
-	ok := 0
-	for range n {
-		if err := <-errs; err == nil {
-			ok++
-		} else {
-			assert.EqualError(t, err, "user already exists", "race losers must get a conflict, not a 500")
-		}
-	}
-	assert.Equal(t, 1, ok)
 }

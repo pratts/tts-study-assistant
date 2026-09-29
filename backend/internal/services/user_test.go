@@ -3,44 +3,52 @@ package services
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUpdatePassword(t *testing.T) {
-	db := setupDB(t)
-	auth := NewAuthService(testConfig)
-	resp := register(t, auth, "a@example.com")
-	users := NewUserService()
+	e := newEnv(t)
+	_, uid := e.register(t, "a@example.com")
 
-	err := users.UpdatePassword(resp.User.ID, "wrong", "new-hash")
-	assert.EqualError(t, err, "incorrect password")
-
-	require.NoError(t, users.UpdatePassword(resp.User.ID, clientHash, "new-hash"))
+	assert.ErrorIs(t, e.users.UpdatePassword(ctx, uid, "wrong", "new-hash"), ErrIncorrectPassword)
+	require.NoError(t, e.users.UpdatePassword(ctx, uid, clientHash, "new-hash"))
 
 	var tokens int64
-	db.Model(&models.RefreshToken{}).Where("user_id = ?", resp.User.ID).Count(&tokens)
+	e.db.Model(&models.RefreshToken{}).Where("user_id = ?", uid).Count(&tokens)
 	assert.Zero(t, tokens, "password change must revoke refresh tokens")
 
-	_, err = auth.Login(&LoginRequest{Email: "a@example.com", Password: clientHash})
-	assert.Error(t, err, "old password must stop working")
-	_, err = auth.Login(&LoginRequest{Email: "a@example.com", Password: "new-hash"})
+	_, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: clientHash})
+	assert.ErrorIs(t, err, ErrInvalidCredentials, "old password must stop working")
+	_, err = e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: "new-hash"})
 	assert.NoError(t, err)
 }
 
-func TestUpdateProfileKeepsPassword(t *testing.T) {
-	db := setupDB(t)
-	resp := register(t, NewAuthService(testConfig), "a@example.com")
+func TestUpdateProfile(t *testing.T) {
+	e := newEnv(t)
+	_, uid := e.register(t, "a@example.com")
+	e.register(t, "taken@example.com")
 
 	var before models.User
-	require.NoError(t, db.First(&before, "id = ?", resp.User.ID).Error)
+	require.NoError(t, e.db.First(&before, "id = ?", uid).Error)
 
-	_, err := NewUserService().UpdateProfile(resp.User.ID, &UpdateProfileRequest{Name: "New"})
+	p, err := e.users.UpdateProfile(ctx, uid, &UpdateProfileRequest{Name: "New", Email: "new@example.com"})
 	require.NoError(t, err)
+	assert.Equal(t, "New", p.Name)
+	assert.Equal(t, "new@example.com", p.Email)
 
 	var after models.User
-	require.NoError(t, db.First(&after, "id = ?", resp.User.ID).Error)
-	assert.Equal(t, "New", after.Name)
-	assert.Equal(t, before.Password, after.Password)
+	require.NoError(t, e.db.First(&after, "id = ?", uid).Error)
+	assert.Equal(t, before.Password, after.Password, "profile updates never touch the password")
+
+	_, err = e.users.UpdateProfile(ctx, uid, &UpdateProfileRequest{Email: "taken@example.com"})
+	assert.ErrorIs(t, err, ErrEmailTaken)
+}
+
+func TestGetProfileNotFound(t *testing.T) {
+	e := newEnv(t)
+	_, err := e.users.GetProfile(ctx, uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
 }

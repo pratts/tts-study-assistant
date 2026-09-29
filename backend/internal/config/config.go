@@ -2,7 +2,7 @@ package config
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -10,14 +10,13 @@ import (
 )
 
 type Config struct {
-	DatabaseURL      string
-	JWTSecret        string
-	JWTRefreshSecret string
-	Port             string
-	CORSOrigins      []string
-	OpenAIAPIKey     string
-	OpenAIModel      string
-	OpenAIBaseURL    string
+	DatabaseURL   string
+	JWTSecret     string
+	Port          string
+	CORSOrigins   []string
+	OpenAIAPIKey  string
+	OpenAIModel   string
+	OpenAIBaseURL string
 	// ProxyHeader is the header holding the client IP (e.g. X-Forwarded-For)
 	// when running behind a reverse proxy. Leave empty when exposed directly,
 	// otherwise clients can spoof their IP and dodge rate limits.
@@ -31,22 +30,21 @@ const minSecretLen = 32
 // fails when a required value is missing or unsafe.
 func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
+		slog.Info("no .env file found, using environment only")
 	}
 
 	cfg := &Config{
-		DatabaseURL:      getEnv("DATABASE_URL", ""),
-		JWTSecret:        getEnv("JWT_SECRET", ""),
-		JWTRefreshSecret: getEnv("JWT_REFRESH_SECRET", ""),
-		Port:             getEnv("PORT", "3000"),
-		CORSOrigins:      strings.Split(getEnv("CORS_ORIGINS", "http://localhost:3000"), ","),
-		OpenAIAPIKey:     getEnv("OPENAI_API_KEY", ""),
-		OpenAIModel:      getEnv("OPENAI_MODEL", "gpt-4o-mini"),
-		OpenAIBaseURL:    getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		ProxyHeader:      getEnv("PROXY_HEADER", ""),
+		DatabaseURL:   getEnv("DATABASE_URL", ""),
+		JWTSecret:     getEnv("JWT_SECRET", ""),
+		Port:          getEnv("PORT", "3000"),
+		CORSOrigins:   strings.Split(getEnv("CORS_ORIGINS", "http://localhost:3000"), ","),
+		OpenAIAPIKey:  getEnv("OPENAI_API_KEY", ""),
+		OpenAIModel:   getEnv("OPENAI_MODEL", "gpt-4o-mini"),
+		OpenAIBaseURL: getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		ProxyHeader:   getEnv("PROXY_HEADER", ""),
 	}
 	if cfg.OpenAIAPIKey == "" {
-		log.Println("OPENAI_API_KEY not set: summarization is disabled")
+		slog.Warn("OPENAI_API_KEY not set: summarization is disabled")
 	}
 	return cfg, cfg.validate()
 }
