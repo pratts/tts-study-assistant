@@ -165,3 +165,34 @@ func TestCleanupExpiredRefreshTokens(t *testing.T) {
 	db.Model(&models.RefreshToken{}).Count(&n)
 	assert.EqualValues(t, 1, n)
 }
+
+func TestRegisterDuplicate(t *testing.T) {
+	setupDB(t)
+	s := NewAuthService(testConfig)
+	register(t, s, "a@example.com")
+	_, err := s.Register(&RegisterRequest{Email: "a@example.com", Password: clientHash, Name: "Again"})
+	assert.EqualError(t, err, "user already exists")
+}
+
+func TestRegisterConcurrentDuplicate(t *testing.T) {
+	setupDB(t)
+	s := NewAuthService(testConfig)
+
+	const n = 6
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			_, err := s.Register(&RegisterRequest{Email: "race@example.com", Password: clientHash, Name: "R"})
+			errs <- err
+		}()
+	}
+	ok := 0
+	for range n {
+		if err := <-errs; err == nil {
+			ok++
+		} else {
+			assert.EqualError(t, err, "user already exists", "race losers must get a conflict, not a 500")
+		}
+	}
+	assert.Equal(t, 1, ok)
+}

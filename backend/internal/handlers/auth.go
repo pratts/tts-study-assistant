@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/pratts/tts-study-assistant/backend/internal/config"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
@@ -26,8 +29,17 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	// Basic validation
+	req.Name = strings.TrimSpace(req.Name)
 	if req.Email == "" || req.Password == "" || req.Name == "" {
 		return utils.SendError(c, fiber.StatusBadRequest, "Email, password, and name are required")
+	}
+	email, ok := normalizeEmail(req.Email)
+	if !ok {
+		return utils.SendError(c, fiber.StatusBadRequest, "Invalid email address")
+	}
+	req.Email = email
+	if !validPassword(req.Password) || utf8.RuneCountInString(req.Name) > maxNameRunes {
+		return utils.SendError(c, fiber.StatusBadRequest, "Invalid password or name")
 	}
 
 	response, err := h.authService.Register(&req)
@@ -52,6 +64,10 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	// Basic validation
 	if req.Email == "" || req.Password == "" {
 		return utils.SendError(c, fiber.StatusBadRequest, "Email and password are required")
+	}
+	req.Email, _ = normalizeEmail(req.Email)
+	if !validPassword(req.Password) {
+		return utils.SendError(c, fiber.StatusUnauthorized, "Invalid credentials")
 	}
 
 	response, err := h.authService.Login(&req)

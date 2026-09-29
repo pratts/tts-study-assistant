@@ -42,10 +42,9 @@ func (h *NotesHandler) GetNotes(c *fiber.Ctx) error {
 // GetNote handles getting a specific note by ID
 func (h *NotesHandler) GetNote(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
-	noteID := c.Params("id")
-
-	if noteID == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Note ID is required")
+	noteID, ok := noteIDParam(c)
+	if !ok {
+		return utils.SendError(c, fiber.StatusBadRequest, "Invalid note ID")
 	}
 
 	note, err := h.notesService.GetNoteByID(noteID, userID)
@@ -71,6 +70,9 @@ func (h *NotesHandler) CreateNote(c *fiber.Ctx) error {
 	if req.Content == "" {
 		return utils.SendError(c, fiber.StatusBadRequest, "Content is required")
 	}
+	if msg := noteFieldsError(req.Content, req.SourceURL, req.SourceTitle, req.Domain); msg != "" {
+		return utils.SendError(c, fiber.StatusBadRequest, msg)
+	}
 
 	note, err := h.notesService.CreateNote(&req, userID)
 	if err != nil {
@@ -83,15 +85,17 @@ func (h *NotesHandler) CreateNote(c *fiber.Ctx) error {
 // UpdateNote handles updating an existing note
 func (h *NotesHandler) UpdateNote(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
-	noteID := c.Params("id")
-	var req services.UpdateNoteRequest
-
-	if noteID == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Note ID is required")
+	noteID, ok := noteIDParam(c)
+	if !ok {
+		return utils.SendError(c, fiber.StatusBadRequest, "Invalid note ID")
 	}
 
+	var req services.UpdateNoteRequest
 	if err := c.BodyParser(&req); err != nil {
 		return utils.SendError(c, fiber.StatusBadRequest, "Invalid request body")
+	}
+	if msg := noteFieldsError(req.Content, req.SourceURL, req.SourceTitle, req.Domain); msg != "" {
+		return utils.SendError(c, fiber.StatusBadRequest, msg)
 	}
 
 	note, err := h.notesService.UpdateNote(noteID, userID, &req)
@@ -108,10 +112,9 @@ func (h *NotesHandler) UpdateNote(c *fiber.Ctx) error {
 // DeleteNote handles deleting a note
 func (h *NotesHandler) DeleteNote(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
-	noteID := c.Params("id")
-
-	if noteID == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Note ID is required")
+	noteID, ok := noteIDParam(c)
+	if !ok {
+		return utils.SendError(c, fiber.StatusBadRequest, "Invalid note ID")
 	}
 
 	err := h.notesService.DeleteNote(noteID, userID)
@@ -138,9 +141,9 @@ func (h *NotesHandler) GetNotesStats(c *fiber.Ctx) error {
 // SummarizeNote handles summarizing a note by ID
 func (h *NotesHandler) SummarizeNote(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
-	noteID := c.Params("id")
-	if noteID == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Note ID is required")
+	noteID, ok := noteIDParam(c)
+	if !ok {
+		return utils.SendError(c, fiber.StatusBadRequest, "Invalid note ID")
 	}
 	summary, err := h.notesService.SummarizeNote(c.UserContext(), noteID, userID, h.summarizer)
 	if err != nil {

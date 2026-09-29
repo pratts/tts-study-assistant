@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
 	"github.com/pratts/tts-study-assistant/backend/pkg/utils"
@@ -39,6 +42,17 @@ func (h *UserHandler) UpdateProfile(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return utils.SendError(c, fiber.StatusBadRequest, "Invalid request body")
 	}
+	req.Name = strings.TrimSpace(req.Name)
+	if utf8.RuneCountInString(req.Name) > maxNameRunes {
+		return utils.SendError(c, fiber.StatusBadRequest, "Name is too long")
+	}
+	if req.Email != "" {
+		email, ok := normalizeEmail(req.Email)
+		if !ok {
+			return utils.SendError(c, fiber.StatusBadRequest, "Invalid email address")
+		}
+		req.Email = email
+	}
 
 	profile, err := h.userService.UpdateProfile(userID, &req)
 	if err != nil {
@@ -66,6 +80,9 @@ func (h *UserHandler) UpdatePassword(c *fiber.Ctx) error {
 	}
 	if req.OldPassword == "" || req.NewPassword == "" {
 		return utils.SendError(c, fiber.StatusBadRequest, "Old and new password are required")
+	}
+	if !validPassword(req.OldPassword) || !validPassword(req.NewPassword) {
+		return utils.SendError(c, fiber.StatusBadRequest, "Invalid password")
 	}
 	if err := h.userService.UpdatePassword(userID, req.OldPassword, req.NewPassword); err != nil {
 		if err.Error() == "incorrect password" {

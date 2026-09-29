@@ -14,6 +14,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// MaxPageSize caps how many notes a single list request returns.
+const MaxPageSize = 100
+
 type NotesService struct {
 	db *gorm.DB
 }
@@ -73,6 +76,7 @@ func (s *NotesService) GetNotes(userID string, page, pageSize int, sourceURL str
 	if pageSize < 1 {
 		pageSize = 10
 	}
+	pageSize = min(pageSize, MaxPageSize)
 	db = db.Offset((page - 1) * pageSize).Limit(pageSize)
 
 	if err := db.Find(&notes).Error; err != nil {

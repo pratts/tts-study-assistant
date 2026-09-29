@@ -18,6 +18,10 @@ type Config struct {
 	OpenAIAPIKey     string
 	OpenAIModel      string
 	OpenAIBaseURL    string
+	// ProxyHeader is the header holding the client IP (e.g. X-Forwarded-For)
+	// when running behind a reverse proxy. Leave empty when exposed directly,
+	// otherwise clients can spoof their IP and dodge rate limits.
+	ProxyHeader string
 }
 
 // minSecretLen is the minimum JWT secret length (256 bits for HS256).
@@ -39,6 +43,7 @@ func Load() (*Config, error) {
 		OpenAIAPIKey:     getEnv("OPENAI_API_KEY", ""),
 		OpenAIModel:      getEnv("OPENAI_MODEL", "gpt-4o-mini"),
 		OpenAIBaseURL:    getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		ProxyHeader:      getEnv("PROXY_HEADER", ""),
 	}
 	if cfg.OpenAIAPIKey == "" {
 		log.Println("OPENAI_API_KEY not set: summarization is disabled")
