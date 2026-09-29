@@ -63,9 +63,10 @@ export function safeNextPath(next: string | null | undefined, fallback = '/dashb
   }
 }
 
-/** `/login?next=<current path>` for the current location. */
-export function loginRedirectPath(): string {
-  const { pathname, search, hash } = window.location
+type Location = { pathname: string; search: string; hash: string }
+
+/** `/login?next=<path>` for a location (the router's, or the window's). */
+export function loginRedirectPath({ pathname, search, hash }: Location = window.location): string {
   const current = pathname + search + hash
   if (pathname === '/login' || pathname === '/register') return '/login'
   return `/login?next=${encodeURIComponent(current)}`
