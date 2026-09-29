@@ -1,0 +1,139 @@
+name: Backend CI
+
+# Gate for deploying the backend: compile, lint, test against Postgres,
+# scan for vulnerabilities and build the production image.
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend-ci.yml"]
+  schedule:
+    - cron: "0 6 * * 1" # weekly: catch newly published vulnerabilities
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+env:
+  GO_VERSION: "1.26.x"
+
+jobs:
+  build:
+    name: Build & lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+      - name: Verify modules
+        run: |
+          go mod verify
+          go mod tidy -diff
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "Run gofmt on:"; echo "$unformatted"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: Build
+        run: go build ./...
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tts
+          POSTGRES_PASSWORD: tts
+          POSTGRES_DB: tts_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tts -d tts_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tts:tts@localhost:5432/tts_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+      - name: Test (race detector, Postgres)
+        run: go test -race -count=1 -timeout 5m -coverpkg=./... -coverprofile=coverage.out ./...
+      - name: Coverage summary
+        run: |
+          echo "### Backend coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out | tail -n 1 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.out
+          retention-days: 14
+
+  vulnerabilities:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache-dependency-path: backend/go.sum
+      - name: govulncheck
+        # Fails when the code reaches a known vulnerable symbol in a
+        # dependency or the Go standard library.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build production image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          tags: tts-study-assistant-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Single status to require in branch protection / deployment rules.
+  ci-passed:
+    name: Backend CI passed
+    runs-on: ubuntu-latest
+    needs: [build, test, vulnerabilities, docker]
+    if: always()
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Check job results
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more backend checks failed"; exit 1
+          fi
