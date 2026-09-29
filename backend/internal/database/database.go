@@ -30,9 +30,14 @@ func Connect(databaseURL string) error {
 
 // Migrate creates or updates the schema for all models.
 func Migrate(db *gorm.DB) error {
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Note{},
 		&models.RefreshToken{},
-	)
+	); err != nil {
+		return err
+	}
+	// Refresh tokens used to be stored in plaintext (36-char UUIDs). Only
+	// 64-char SHA-256 hashes are valid now, so drop the legacy rows.
+	return db.Where("length(token) <> 64").Delete(&models.RefreshToken{}).Error
 }

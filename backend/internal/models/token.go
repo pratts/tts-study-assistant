@@ -8,8 +8,9 @@ import (
 )
 
 type RefreshToken struct {
-	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	Token     string    `gorm:"uniqueIndex;not null"`
+	ID uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	// TokenHash is the SHA-256 of the refresh token; the raw token is never stored.
+	TokenHash string    `gorm:"column:token;uniqueIndex;not null"`
 	UserID    uuid.UUID `gorm:"type:uuid;not null"`
 	ExpiresAt time.Time `gorm:"not null"`
 	CreatedAt time.Time

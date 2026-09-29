@@ -20,7 +20,7 @@ Go/Fiber REST API for authentication, notes, and user management.
 
    - Copy `.env.example` to `.env` and fill in values:
      - `DATABASE_URL` — PostgreSQL connection string
-     - `JWT_SECRET` — Secret for signing JWTs
+     - `JWT_SECRET` — Secret for signing JWTs, at least 32 characters (`openssl rand -hex 32`). The server refuses to start without it.
      - `PORT` — (optional) API port (default: 3000)
 
 3. **Run database migrations:**
@@ -56,6 +56,21 @@ TEST_DATABASE_URL="postgres://localhost:5432/tts_test?sslmode=disable" go test .
 - The server hashes that digest with **bcrypt** before storing it. The stored value cannot be replayed as a credential.
 - Rows created before bcrypt was introduced are upgraded transparently on the user's next successful login.
 - Passwords change only through `PUT /api/v1/user/password`, which verifies the current password and revokes every refresh token (all other sessions are logged out). `PUT /api/v1/user/profile` does not accept a password.
+
+## Sessions and tokens
+
+| Source (`source` on login) | Access token | Refresh token |
+| -------------------------- | ------------ | ------------- |
+| `web` (default; also any unknown value) | 15 min | 30 days |
+| `extension` | 1 hour | 90 days |
+
+- Access tokens are HS256 JWTs. Only HS256 with the expected issuer is accepted.
+- Refresh tokens are 256-bit random values. Only their SHA-256 hash is stored.
+- `POST /auth/refresh` is single-use: the old token is consumed atomically, and a replayed or concurrently reused token is rejected.
+- Expired refresh tokens are purged hourly.
+- `GET /auth/verify` (Bearer token) returns `{id, email, name}`; the extension uses it to check its session.
+- Every 401 carries `code: "TOKEN_EXPIRED"`; the clients use that code to trigger a refresh or a logout.
+- Upgrade note: refresh tokens stored in plaintext before this change are deleted on startup, so users log in once more.
 
 ## Notes
 

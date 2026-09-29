@@ -5,13 +5,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/pratts/tts-study-assistant/backend/internal/config"
 	"github.com/pratts/tts-study-assistant/backend/internal/database"
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
 	"github.com/pratts/tts-study-assistant/backend/internal/password"
+	"github.com/pratts/tts-study-assistant/backend/internal/tokens"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type AuthService struct {
@@ -45,13 +45,6 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 }
 
-// Claims struct for JWT parsing
-type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	jwt.RegisteredClaims
-}
-
 func NewAuthService(cfg *config.Config) *AuthService {
 	return &AuthService{
 		db:  database.DB,
@@ -80,26 +73,7 @@ func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	// Generate tokens
-	accessToken, err := s.generateAccessToken(user.ID.String(), user.Email)
-	if err != nil {
-		return nil, err
-	}
-
-	refreshToken, err := s.generateRefreshToken(user.ID.String())
-	if err != nil {
-		return nil, err
-	}
-
-	response := &AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}
-	response.User.ID = user.ID.String()
-	response.User.Email = user.Email
-	response.User.Name = user.Name
-
-	return response, nil
+	return s.issueSession(s.db, &user, tokens.SourceWeb, "")
 }
 
 func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
@@ -121,31 +95,7 @@ func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
 		s.upgradePasswordHash(&user, req.Password)
 	}
 
-	source := req.Source
-	if source == "" {
-		source = "web"
-	}
-
-	// Generate tokens
-	accessToken, err := s.generateAccessTokenWithSource(user.ID.String(), user.Email, source)
-	if err != nil {
-		return nil, err
-	}
-
-	refreshToken, err := s.generateRefreshTokenWithSource(user.ID.String(), source, "")
-	if err != nil {
-		return nil, err
-	}
-
-	response := &AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}
-	response.User.ID = user.ID.String()
-	response.User.Email = user.Email
-	response.User.Name = user.Name
-
-	return response, nil
+	return s.issueSession(s.db, &user, tokens.NormalizeSource(req.Source), "")
 }
 
 // upgradePasswordHash replaces a legacy password value with a bcrypt hash.
@@ -160,147 +110,72 @@ func (s *AuthService) upgradePasswordHash(user *models.User, secret string) {
 	}
 }
 
+// Refresh rotates a refresh token. The old token is consumed by a single
+// DELETE ... RETURNING, so concurrent requests with the same token cannot
+// both succeed.
 func (s *AuthService) Refresh(req *RefreshRequest) (*AuthResponse, error) {
-	// Find refresh token
-	var refreshToken models.RefreshToken
-	if err := s.db.Where("token = ?", req.RefreshToken).First(&refreshToken).Error; err != nil {
-		return nil, errors.New("invalid refresh token")
-	}
-	if refreshToken.ExpiresAt.Before(time.Now()) {
-		return nil, errors.New("invalid refresh token")
-	}
+	var resp *AuthResponse
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var old models.RefreshToken
+		res := tx.Clauses(clause.Returning{}).
+			Where("token = ? AND expires_at > ?", tokens.HashRefresh(req.RefreshToken), time.Now()).
+			Delete(&old)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errors.New("invalid refresh token")
+		}
 
-	// Get user
-	var user models.User
-	if err := s.db.First(&user, refreshToken.UserID).Error; err != nil {
-		return nil, err
-	}
+		var user models.User
+		if err := tx.First(&user, "id = ?", old.UserID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("invalid refresh token")
+			}
+			return err
+		}
 
-	// Update LastUsedAt
-	now := time.Now()
-	s.db.Model(&refreshToken).Update("last_used_at", &now)
-
-	// Token rotation: delete old, create new with same source/device
-	s.db.Delete(&refreshToken)
-
-	accessToken, err := s.generateAccessTokenWithSource(user.ID.String(), user.Email, refreshToken.Source)
-	if err != nil {
-		return nil, err
-	}
-	newRefreshToken, err := s.generateRefreshTokenWithSource(user.ID.String(), refreshToken.Source, refreshToken.DeviceInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	response := &AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: newRefreshToken,
-	}
-	response.User.ID = user.ID.String()
-	response.User.Email = user.Email
-	response.User.Name = user.Name
-
-	return response, nil
+		var err error
+		resp, err = s.issueSession(tx, &user, old.Source, old.DeviceInfo)
+		return err
+	})
+	return resp, err
 }
 
+// Logout revokes a refresh token. Unknown tokens are not an error.
 func (s *AuthService) Logout(refreshToken string) error {
-	// Delete refresh token (idempotent)
-	s.db.Where("token = ?", refreshToken).Delete(&models.RefreshToken{})
-	return nil
+	return s.db.Where("token = ?", tokens.HashRefresh(refreshToken)).Delete(&models.RefreshToken{}).Error
 }
 
-func (s *AuthService) generateAccessToken(userID, email string) (string, error) {
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   email,
-		"exp":     time.Now().Add(time.Hour * 24).Unix(), // 24 hours
-		"iat":     time.Now().Unix(),
+// issueSession creates an access token and a stored refresh token.
+func (s *AuthService) issueSession(db *gorm.DB, user *models.User, source, deviceInfo string) (*AuthResponse, error) {
+	accessToken, err := tokens.IssueAccess(s.cfg.JWTSecret, user.ID.String(), user.Email, source)
+	if err != nil {
+		return nil, err
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(s.cfg.JWTSecret))
-}
-
-func (s *AuthService) generateRefreshToken(userID string) (string, error) {
-	// Generate random refresh token
-	refreshToken := uuid.New().String()
-
-	// Store refresh token in database
-	refreshTokenModel := models.RefreshToken{
-		Token:     refreshToken,
-		UserID:    uuid.MustParse(userID),
-		ExpiresAt: time.Now().Add(time.Hour * 24 * 7), // 7 days
+	raw, hash, err := tokens.NewRefresh()
+	if err != nil {
+		return nil, err
 	}
-
-	if err := s.db.Create(&refreshTokenModel).Error; err != nil {
-		return "", err
-	}
-
-	return refreshToken, nil
-}
-
-// Helper: generate access token with source-based expiry
-func (s *AuthService) generateAccessTokenWithSource(userID, email, source string) (string, error) {
-	var exp time.Duration
-	switch source {
-	case "extension":
-		exp = time.Hour * 1
-	default:
-		exp = time.Minute * 15
-	}
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   email,
-		"exp":     time.Now().Add(exp).Unix(),
-		"iat":     time.Now().Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(s.cfg.JWTSecret))
-}
-
-// Helper: generate refresh token with source-based expiry and device info
-func (s *AuthService) generateRefreshTokenWithSource(userID, source, deviceInfo string) (string, error) {
-	refreshToken := uuid.New().String()
-	var exp time.Duration
-	switch source {
-	case "extension":
-		exp = time.Hour * 24 * 90 // 90 days
-	default:
-		exp = time.Hour * 24 * 30 // 30 days
-	}
-	refreshTokenModel := models.RefreshToken{
-		Token:      refreshToken,
-		UserID:     uuid.MustParse(userID),
-		ExpiresAt:  time.Now().Add(exp),
+	now := time.Now()
+	rt := models.RefreshToken{
+		TokenHash:  hash,
+		UserID:     user.ID,
+		ExpiresAt:  now.Add(tokens.RefreshTTL(source)),
 		Source:     source,
+		LastUsedAt: &now,
 		DeviceInfo: deviceInfo,
 	}
-	if err := s.db.Create(&refreshTokenModel).Error; err != nil {
-		return "", err
-	}
-	return refreshToken, nil
-}
-
-// GenerateAccessTokenForSource is a public wrapper for generateAccessTokenWithSource
-func (s *AuthService) GenerateAccessTokenForSource(userID, email, source string) (string, error) {
-	return s.generateAccessTokenWithSource(userID, email, source)
-}
-
-// GenerateRefreshTokenForSource is a public wrapper for generateRefreshTokenWithSource
-func (s *AuthService) GenerateRefreshTokenForSource(userID, source, deviceInfo string) (string, error) {
-	return s.generateRefreshTokenWithSource(userID, source, deviceInfo)
-}
-
-// ParseToken parses a JWT and returns claims
-func (s *AuthService) ParseToken(tokenString string) (*Claims, error) {
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(s.cfg.JWTSecret), nil
-	})
-	if err != nil || !token.Valid {
+	if err := db.Create(&rt).Error; err != nil {
 		return nil, err
 	}
-	return claims, nil
+
+	resp := &AuthResponse{AccessToken: accessToken, RefreshToken: raw}
+	resp.User.ID = user.ID.String()
+	resp.User.Email = user.Email
+	resp.User.Name = user.Name
+	return resp, nil
 }
 
 // GetUserByID fetches a user by ID

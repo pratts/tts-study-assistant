@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -13,11 +14,14 @@ import (
 	"github.com/pratts/tts-study-assistant/backend/internal/database"
 	"github.com/pratts/tts-study-assistant/backend/internal/handlers"
 	"github.com/pratts/tts-study-assistant/backend/internal/middleware"
+	"github.com/pratts/tts-study-assistant/backend/internal/services"
 )
 
 func main() {
-	// Load configuration
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal("Invalid configuration: ", err)
+	}
 
 	// Connect to database
 	if err := database.Connect(cfg.DatabaseURL); err != nil {
@@ -41,6 +45,8 @@ func main() {
 
 	// Routes
 	setupRoutes(app, cfg)
+
+	go cleanupRefreshTokens(services.NewAuthService(cfg), time.Hour)
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)
@@ -72,6 +78,7 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	auth.Post("/login", authHandler.Login)
 	auth.Post("/refresh", authHandler.Refresh)
 	auth.Post("/logout", authHandler.Logout)
+	auth.Get("/verify", middleware.AuthMiddleware(cfg), authHandler.Verify)
 
 	// Protected routes
 	protected := api.Group("", middleware.AuthMiddleware(cfg))
@@ -91,6 +98,15 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	user.Get("/profile", userHandler.GetProfile)
 	user.Put("/profile", userHandler.UpdateProfile)
 	user.Put("/password", userHandler.UpdatePassword)
+}
+
+// cleanupRefreshTokens periodically deletes expired refresh tokens.
+func cleanupRefreshTokens(auth *services.AuthService, every time.Duration) {
+	for range time.Tick(every) {
+		if err := auth.CleanupExpiredRefreshTokens(); err != nil {
+			log.Println("refresh token cleanup failed:", err)
+		}
+	}
 }
 
 func customErrorHandler(c *fiber.Ctx, err error) error {
