@@ -2,12 +2,17 @@
     "openapi": "3.0.3",
     "info": {
         "title": "TTS Study Assistant API",
-        "version": "1.0.0",
-        "description": "API for TTS Study Assistant. All protected endpoints require a JWT Bearer token. Passwords must be pre-hashed by the client."
+        "version": "1.1.0",
+        "description": "API for TTS Study Assistant. Protected endpoints require a JWT Bearer access token. Clients send a SHA-256 hex digest of the password; the server stores it with bcrypt. Success responses use the envelope {success, message, data}; errors use {error, message, code}. Every 401 carries code TOKEN_EXPIRED, which clients use to trigger a token refresh.",
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        }
     },
     "servers": [
         {
-            "url": "{{baseUrl}}"
+            "url": "http://localhost:3000/api/v1",
+            "description": "Local development"
         }
     ],
     "components": {
@@ -15,8 +20,7 @@
             "bearerAuth": {
                 "type": "http",
                 "scheme": "bearer",
-                "bearerFormat": "JWT",
-                "description": "Use {{accessToken}} as the token value."
+                "bearerFormat": "JWT"
             }
         },
         "schemas": {
@@ -30,14 +34,18 @@
                 "properties": {
                     "email": {
                         "type": "string",
-                        "format": "email"
+                        "format": "email",
+                        "description": "Trimmed and lower-cased by the server"
                     },
                     "password": {
                         "type": "string",
-                        "description": "Pre-hashed password"
+                        "minLength": 1,
+                        "maxLength": 72,
+                        "description": "SHA-256 hex digest of the password (64 chars)"
                     },
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 100
                     }
                 }
             },
@@ -54,7 +62,18 @@
                     },
                     "password": {
                         "type": "string",
-                        "description": "Pre-hashed password"
+                        "minLength": 1,
+                        "maxLength": 72,
+                        "description": "SHA-256 hex digest of the password (64 chars)"
+                    },
+                    "source": {
+                        "type": "string",
+                        "enum": [
+                            "web",
+                            "extension"
+                        ],
+                        "default": "web",
+                        "description": "Session type. web: 15 min access / 30 day refresh. extension: 1 h / 90 days. Unknown values are treated as web."
                     }
                 }
             },
@@ -68,18 +87,7 @@
                         "type": "string"
                     },
                     "user": {
-                        "type": "object",
-                        "properties": {
-                            "id": {
-                                "type": "string"
-                            },
-                            "email": {
-                                "type": "string"
-                            },
-                            "name": {
-                                "type": "string"
-                            }
-                        }
+                        "$ref": "#/components/schemas/UserProfile"
                     }
                 }
             },
@@ -90,7 +98,8 @@
                 ],
                 "properties": {
                     "refresh_token": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Single use; rotated on every refresh"
                     }
                 }
             },
@@ -98,7 +107,8 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "content": {
                         "type": "string"
@@ -111,11 +121,15 @@
                     },
                     "domain": {
                         "type": "string",
-                        "description": "Main domain for the note"
+                        "description": "Registrable domain, derived from source_url when not given (news.bbc.co.uk → bbc.co.uk)"
                     },
                     "metadata": {
                         "type": "object",
-                        "description": "Arbitrary metadata for the note"
+                        "description": "Arbitrary JSON object, returned as stored"
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "AI summary, or \"unavailable\" when the text could not be summarized. Cleared when content changes."
                     },
                     "created_at": {
                         "type": "string",
@@ -134,43 +148,53 @@
                 ],
                 "properties": {
                     "content": {
-                        "type": "string"
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100000
                     },
                     "source_url": {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 2048
                     },
                     "source_title": {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 512
                     },
                     "domain": {
                         "type": "string",
-                        "description": "Main domain for the note (optional, will be extracted from source_url if not provided)"
+                        "maxLength": 253,
+                        "description": "Optional; derived from source_url when omitted"
                     },
                     "metadata": {
-                        "type": "object",
-                        "description": "Arbitrary metadata for the note"
+                        "type": "object"
                     }
                 }
             },
             "UpdateNoteRequest": {
                 "type": "object",
+                "description": "Partial update. Omitted fields are unchanged; an empty string clears source_url, source_title or domain; metadata null clears metadata.",
                 "properties": {
                     "content": {
-                        "type": "string"
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100000,
+                        "description": "Changing content clears the summary"
                     },
                     "source_url": {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 2048
                     },
                     "source_title": {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 512
                     },
                     "domain": {
                         "type": "string",
-                        "description": "Main domain for the note (optional)"
+                        "maxLength": 253
                     },
                     "metadata": {
                         "type": "object",
-                        "description": "Arbitrary metadata for the note"
+                        "nullable": true
                     }
                 }
             },
@@ -178,10 +202,12 @@
                 "type": "object",
                 "properties": {
                     "id": {
-                        "type": "string"
+                        "type": "string",
+                        "format": "uuid"
                     },
                     "email": {
-                        "type": "string"
+                        "type": "string",
+                        "format": "email"
                     },
                     "name": {
                         "type": "string"
@@ -190,16 +216,15 @@
             },
             "UpdateProfileRequest": {
                 "type": "object",
+                "description": "Passwords cannot be changed here; use PUT /user/password.",
                 "properties": {
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 100
                     },
                     "email": {
-                        "type": "string"
-                    },
-                    "password": {
                         "type": "string",
-                        "description": "Pre-hashed password"
+                        "format": "email"
                     }
                 }
             },
@@ -207,14 +232,70 @@
                 "type": "object",
                 "properties": {
                     "error": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "example": true
                     },
                     "message": {
                         "type": "string"
                     },
                     "code": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "TOKEN_EXPIRED on every 401"
                     }
+                }
+            },
+            "UpdatePasswordRequest": {
+                "type": "object",
+                "required": [
+                    "old_password",
+                    "new_password"
+                ],
+                "properties": {
+                    "old_password": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 72,
+                        "description": "SHA-256 hex digest of the password (64 chars)"
+                    },
+                    "new_password": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 72,
+                        "description": "SHA-256 hex digest of the password (64 chars)"
+                    }
+                }
+            },
+            "NotesStats": {
+                "type": "object",
+                "properties": {
+                    "domain": {
+                        "type": "string"
+                    },
+                    "count": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "SummaryResponse": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "The summary, or \"unavailable\""
+                    }
+                }
+            },
+            "SuccessResponse": {
+                "type": "object",
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "data": {}
                 }
             }
         }
@@ -224,6 +305,8 @@
         "/auth/register": {
             "post": {
                 "summary": "Register a new user",
+                "operationId": "register",
+                "description": "Rate limited to 10 requests/minute per IP.",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -240,13 +323,45 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/AuthResponse"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/AuthResponse"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
                                 }
                             }
                         }
                     },
                     "409": {
-                        "description": "User already exists",
+                        "description": "Email already registered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -260,7 +375,9 @@
         },
         "/auth/login": {
             "post": {
-                "summary": "Login user",
+                "summary": "Login",
+                "operationId": "login",
+                "description": "Rate limited to 10 requests/minute per IP.",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -277,7 +394,29 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/AuthResponse"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/AuthResponse"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
                                 }
                             }
                         }
@@ -291,13 +430,25 @@
                                 }
                             }
                         }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
         "/auth/refresh": {
             "post": {
-                "summary": "Refresh access token",
+                "summary": "Rotate a refresh token",
+                "operationId": "refreshToken",
+                "description": "Consumes the refresh token and returns a new pair. A token can be used once.",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -314,13 +465,35 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/AuthResponse"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/AuthResponse"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
                                 }
                             }
                         }
                     },
                     "401": {
-                        "description": "Invalid refresh token",
+                        "description": "Invalid, expired or already used refresh token",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -334,7 +507,8 @@
         },
         "/auth/logout": {
             "post": {
-                "summary": "Logout user",
+                "summary": "Revoke a refresh token",
+                "operationId": "logout",
                 "requestBody": {
                     "required": true,
                     "content": {
@@ -347,10 +521,55 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Success"
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "400": {
-                        "description": "Bad request",
+                        "description": "Invalid input",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/verify": {
+            "get": {
+                "summary": "Return the authenticated user",
+                "operationId": "verifySession",
+                "description": "Returns a bare user object (no envelope); used by the browser extension to check its session.",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UserProfile"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -364,33 +583,38 @@
         },
         "/notes": {
             "get": {
-                "summary": "Get paginated notes for the authenticated user",
+                "summary": "List notes, newest first",
+                "operationId": "listNotes",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
                 "parameters": [
                     {
                         "name": "page",
                         "in": "query",
-                        "description": "Page number (default: 1)",
-                        "required": false,
                         "schema": {
                             "type": "integer",
-                            "default": 1
+                            "default": 1,
+                            "minimum": 1
                         }
                     },
                     {
                         "name": "page_size",
                         "in": "query",
-                        "description": "Number of notes per page (default: 10)",
-                        "required": false,
+                        "description": "Clamped to 1..100",
                         "schema": {
                             "type": "integer",
-                            "default": 10
+                            "default": 10,
+                            "minimum": 1,
+                            "maximum": 100
                         }
                     },
                     {
                         "name": "source_url",
                         "in": "query",
-                        "description": "Filter notes by exact source_url",
-                        "required": false,
+                        "description": "Exact match",
                         "schema": {
                             "type": "string"
                         }
@@ -398,16 +622,10 @@
                     {
                         "name": "domain",
                         "in": "query",
-                        "description": "Filter notes by main domain (e.g. 'edmingle.com')",
-                        "required": false,
+                        "description": "Exact match, e.g. bbc.co.uk",
                         "schema": {
                             "type": "string"
                         }
-                    }
-                ],
-                "security": [
-                    {
-                        "bearerAuth": []
                     }
                 ],
                 "responses": {
@@ -416,16 +634,28 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/components/schemas/Note"
-                                    }
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Note"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
                                 }
                             }
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -437,7 +667,8 @@
                 }
             },
             "post": {
-                "summary": "Create a new note",
+                "summary": "Create a note",
+                "operationId": "createNote",
                 "security": [
                     {
                         "bearerAuth": []
@@ -459,13 +690,25 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Note"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/Note"
+                                                }
+                                            }
+                                        }
+                                    ]
                                 }
                             }
                         }
                     },
                     "400": {
-                        "description": "Bad request",
+                        "description": "Invalid input",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -475,7 +718,65 @@
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Request body over 512 KB",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/notes/stats": {
+            "get": {
+                "summary": "Count notes per domain",
+                "operationId": "getNotesStats",
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/NotesStats"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -489,7 +790,8 @@
         },
         "/notes/{id}": {
             "get": {
-                "summary": "Get a specific note by ID",
+                "summary": "Get a note",
+                "operationId": "getNote",
                 "security": [
                     {
                         "bearerAuth": []
@@ -501,7 +803,8 @@
                         "in": "path",
                         "required": true,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "uuid"
                         }
                     }
                 ],
@@ -511,7 +814,39 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Note"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/Note"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ID is not a UUID",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
                                 }
                             }
                         }
@@ -525,21 +860,12 @@
                                 }
                             }
                         }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/ErrorResponse"
-                                }
-                            }
-                        }
                     }
                 }
             },
             "put": {
-                "summary": "Update a note",
+                "summary": "Partially update a note",
+                "operationId": "updateNote",
                 "security": [
                     {
                         "bearerAuth": []
@@ -551,7 +877,8 @@
                         "in": "path",
                         "required": true,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "uuid"
                         }
                     }
                 ],
@@ -571,13 +898,25 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Note"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/Note"
+                                                }
+                                            }
+                                        }
+                                    ]
                                 }
                             }
                         }
                     },
-                    "404": {
-                        "description": "Note not found",
+                    "400": {
+                        "description": "Invalid input",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -587,7 +926,17 @@
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Note not found",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -600,6 +949,7 @@
             },
             "delete": {
                 "summary": "Delete a note",
+                "operationId": "deleteNote",
                 "security": [
                     {
                         "bearerAuth": []
@@ -611,16 +961,28 @@
                         "in": "path",
                         "required": true,
                         "schema": {
-                            "type": "string"
+                            "type": "string",
+                            "format": "uuid"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Success"
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
                     },
-                    "404": {
-                        "description": "Note not found",
+                    "400": {
+                        "description": "ID is not a UUID",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -630,7 +992,17 @@
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Note not found",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -642,12 +1014,25 @@
                 }
             }
         },
-        "/notes/stats": {
-            "get": {
-                "summary": "Get number of notes per unique domain for the authenticated user",
+        "/notes/{id}/summarize": {
+            "post": {
+                "summary": "Summarize a note with AI",
+                "operationId": "summarizeNote",
+                "description": "Stores and returns a 2-3 sentence summary. Rate limited to 10 requests/minute per user.",
                 "security": [
                     {
                         "bearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
                     }
                 ],
                 "responses": {
@@ -656,24 +1041,85 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "domain": {
-                                                "type": "string"
-                                            },
-                                            "count": {
-                                                "type": "integer"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/SummaryResponse"
+                                                }
                                             }
                                         }
-                                    }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ID is not a UUID",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
                                 }
                             }
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Note not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Note content changed during summarization; retry",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Upstream AI provider failed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Summarization not configured on the server",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -687,7 +1133,8 @@
         },
         "/user/profile": {
             "get": {
-                "summary": "Get user profile",
+                "summary": "Get the current user's profile",
+                "operationId": "getProfile",
                 "security": [
                     {
                         "bearerAuth": []
@@ -699,13 +1146,35 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/UserProfile"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/UserProfile"
+                                                }
+                                            }
+                                        }
+                                    ]
                                 }
                             }
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -717,7 +1186,8 @@
                 }
             },
             "put": {
-                "summary": "Update user profile",
+                "summary": "Update name and/or email",
+                "operationId": "updateProfile",
                 "security": [
                     {
                         "bearerAuth": []
@@ -739,13 +1209,25 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/UserProfile"
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/UserProfile"
+                                                }
+                                            }
+                                        }
+                                    ]
                                 }
                             }
                         }
                     },
                     "400": {
-                        "description": "Bad request",
+                        "description": "Invalid input",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -755,7 +1237,17 @@
                         }
                     },
                     "401": {
-                        "description": "Unauthorized",
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Email already taken",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -769,7 +1261,9 @@
         },
         "/user/password": {
             "put": {
-                "summary": "Update user password",
+                "summary": "Change password",
+                "operationId": "updatePassword",
+                "description": "Verifies the old password and revokes all refresh tokens (other sessions are logged out).",
                 "security": [
                     {
                         "bearerAuth": []
@@ -780,31 +1274,28 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "old_password": {
-                                        "type": "string",
-                                        "description": "Pre-hashed old password"
-                                    },
-                                    "new_password": {
-                                        "type": "string",
-                                        "description": "Pre-hashed new password"
-                                    }
-                                },
-                                "required": [
-                                    "old_password",
-                                    "new_password"
-                                ]
+                                "$ref": "#/components/schemas/UpdatePasswordRequest"
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Password updated successfully"
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/SuccessResponse"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
                     },
                     "400": {
-                        "description": "Bad request",
+                        "description": "Invalid input",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -814,7 +1305,7 @@
                         }
                     },
                     "401": {
-                        "description": "Incorrect old password or unauthorized",
+                        "description": "Incorrect old password, or missing/invalid access token",
                         "content": {
                             "application/json": {
                                 "schema": {
