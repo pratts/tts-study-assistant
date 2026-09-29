@@ -1,7 +1,8 @@
 package handlers
 
 import (
-	"fmt"
+	"errors"
+	"log"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
@@ -10,11 +11,13 @@ import (
 
 type NotesHandler struct {
 	notesService *services.NotesService
+	summarizer   *services.SummarizerService
 }
 
-func NewNotesHandler() *NotesHandler {
+func NewNotesHandler(summarizer *services.SummarizerService) *NotesHandler {
 	return &NotesHandler{
 		notesService: services.NewNotesService(),
+		summarizer:   summarizer,
 	}
 }
 
@@ -139,14 +142,18 @@ func (h *NotesHandler) SummarizeNote(c *fiber.Ctx) error {
 	if noteID == "" {
 		return utils.SendError(c, fiber.StatusBadRequest, "Note ID is required")
 	}
-	fmt.Println("UserId: ", userID, " NoteId: ", noteID)
-	summarizer := services.NewSummarizerService()
-	summary, err := h.notesService.SummarizeNote(noteID, userID, summarizer)
+	summary, err := h.notesService.SummarizeNote(c.UserContext(), noteID, userID, h.summarizer)
 	if err != nil {
-		if err.Error() == "note not found" {
+		switch {
+		case err.Error() == "note not found":
 			return utils.SendError(c, fiber.StatusNotFound, "Note not found")
+		case err.Error() == "note changed during summarization":
+			return utils.SendError(c, fiber.StatusConflict, "Note changed during summarization, please retry")
+		case errors.Is(err, services.ErrSummarizerDisabled):
+			return utils.SendError(c, fiber.StatusServiceUnavailable, "Summarization is not configured")
 		}
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to summarize note")
+		log.Printf("summarize note %s: %v", noteID, err)
+		return utils.SendError(c, fiber.StatusBadGateway, "Failed to summarize note")
 	}
 	return utils.SendSuccess(c, "Note summarized successfully", fiber.Map{"summary": summary})
 }

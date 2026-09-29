@@ -22,6 +22,9 @@ Go/Fiber REST API for authentication, notes, and user management.
      - `DATABASE_URL` — PostgreSQL connection string
      - `JWT_SECRET` — Secret for signing JWTs, at least 32 characters (`openssl rand -hex 32`). The server refuses to start without it.
      - `PORT` — (optional) API port (default: 3000)
+     - `OPENAI_API_KEY` — (optional) enables `POST /notes/{id}/summarize`; without it the endpoint returns 503
+     - `OPENAI_MODEL` — (optional) chat model for summaries (default: `gpt-4o-mini`)
+     - `OPENAI_BASE_URL` — (optional) OpenAI-compatible API base URL (default: `https://api.openai.com/v1`)
 
 3. **Run database migrations:**
    (Describe migration tool or manual steps if any)
@@ -56,6 +59,22 @@ TEST_DATABASE_URL="postgres://localhost:5432/tts_test?sslmode=disable" go test .
 - The server hashes that digest with **bcrypt** before storing it. The stored value cannot be replayed as a credential.
 - Rows created before bcrypt was introduced are upgraded transparently on the user's next successful login.
 - Passwords change only through `PUT /api/v1/user/password`, which verifies the current password and revokes every refresh token (all other sessions are logged out). `PUT /api/v1/user/profile` does not accept a password.
+
+## Summaries
+
+`POST /api/v1/notes/{id}/summarize` sends the note to the OpenAI chat completions API and stores a 2-3 sentence summary.
+
+- The response is `{"summary": "..."}`. The value `"unavailable"` means the text was too short or incomplete to summarize; the clients check for it.
+- The upstream call has a 30s timeout and is cancelled if the client disconnects.
+- Only the `summary` column is written, and only if the content is unchanged since the request started. An edit made during summarization wins, and the request returns `409`.
+- Editing a note's content clears its summary, since it no longer matches.
+
+| Status | Meaning |
+| ------ | ------- |
+| 404 | Note not found (or not yours) |
+| 409 | Note changed during summarization; retry |
+| 502 | OpenAI call failed |
+| 503 | `OPENAI_API_KEY` not configured |
 
 ## Sessions and tokens
 
