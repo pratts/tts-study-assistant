@@ -110,6 +110,28 @@ TEST_DATABASE_URL="postgres://localhost:5432/tts_test?sslmode=disable" go test .
 - Every 401 carries `code: "TOKEN_EXPIRED"`; the clients use that code to trigger a refresh or a logout.
 - Upgrade note: refresh tokens stored in plaintext before this change are deleted on startup, so users log in once more.
 
-## Notes
+## Notes API semantics
 
-- See `/internal/models/` for data models.
+- `PUT /api/v1/notes/{id}` is a partial update: omitted fields are unchanged, `""` clears `source_url`/`source_title`/`domain`, and `"metadata": null` clears metadata. `content` cannot be empty.
+- `metadata` must be a JSON object and is returned exactly as stored.
+- When `domain` is omitted on create, it is derived from `source_url` using the public suffix list (`news.bbc.co.uk` → `bbc.co.uk`).
+
+## Project layout
+
+```
+cmd/server/          entrypoint: config, DI wiring, routes, graceful shutdown
+internal/config/     environment configuration and validation
+internal/database/   connection and migrations
+internal/models/     GORM models
+internal/services/   business logic; returns sentinel errors (services/errors.go)
+internal/handlers/   HTTP handlers: validation and error → status mapping
+internal/middleware/ JWT auth; exposes the caller's typed user ID
+internal/tokens/     access/refresh token issuing and parsing
+internal/password/   bcrypt hashing with legacy upgrade
+internal/respond/    JSON response envelopes
+internal/testutil/   Postgres test harness
+```
+
+- Dependencies are passed in through constructors from `cmd/server`; there is no global DB handle.
+- Logs are structured JSON (`log/slog`) on stdout; access logs come from Fiber's logger.
+- On `SIGINT`/`SIGTERM` the server stops accepting connections and waits up to 10s for in-flight requests.

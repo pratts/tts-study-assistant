@@ -31,7 +31,7 @@ func send(t *testing.T, app *fiber.App, method, path string, body []byte, header
 }
 
 func TestRoutesExist(t *testing.T) {
-	app := newApp(testCfg)
+	app := newApp(testCfg, nil)
 	assert.Equal(t, 200, send(t, app, "GET", "/health", nil, nil))
 
 	for _, route := range []string{"/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/login", "/api/v1/auth/register"} {
@@ -41,7 +41,7 @@ func TestRoutesExist(t *testing.T) {
 }
 
 func TestSecurityHeaders(t *testing.T) {
-	resp, err := newApp(testCfg).Test(httptest.NewRequest("GET", "/health", nil))
+	resp, err := newApp(testCfg, nil).Test(httptest.NewRequest("GET", "/health", nil))
 	require.NoError(t, err)
 	assert.Equal(t, "nosniff", resp.Header.Get("X-Content-Type-Options"))
 	assert.Equal(t, "SAMEORIGIN", resp.Header.Get("X-Frame-Options"))
@@ -49,7 +49,7 @@ func TestSecurityHeaders(t *testing.T) {
 }
 
 func TestLoginRateLimited(t *testing.T) {
-	app := newApp(testCfg)
+	app := newApp(testCfg, nil)
 	for i := range authRateLimit {
 		assert.Equal(t, 400, send(t, app, "POST", "/api/v1/auth/login", []byte(`{}`), nil), "request %d", i)
 	}
@@ -59,7 +59,7 @@ func TestLoginRateLimited(t *testing.T) {
 func TestBodyLimit(t *testing.T) {
 	big := []byte(`{"content":"` + strings.Repeat("a", bodyLimit) + `"}`)
 	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(big))
-	resp, err := newApp(testCfg).Test(req, -1)
+	resp, err := newApp(testCfg, nil).Test(req, -1)
 	// fasthttp rejects the request before routing; the in-memory test
 	// transport surfaces that as an error instead of a 413 response.
 	if err != nil {
@@ -73,7 +73,7 @@ func TestInvalidNoteIDIsBadRequest(t *testing.T) {
 	tok, err := tokens.IssueAccess(testCfg.JWTSecret, "00000000-0000-0000-0000-000000000001", "a@example.com", tokens.SourceWeb)
 	require.NoError(t, err)
 	auth := map[string]string{"Authorization": "Bearer " + tok}
-	app := newApp(testCfg)
+	app := newApp(testCfg, nil)
 
 	assert.Equal(t, 400, send(t, app, "GET", "/api/v1/notes/not-a-uuid", nil, auth))
 	assert.Equal(t, 400, send(t, app, "PUT", "/api/v1/notes/not-a-uuid", []byte(`{}`), auth))

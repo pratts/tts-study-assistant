@@ -1,8 +1,14 @@
 package main
 
 import (
-	"log"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -16,7 +22,9 @@ import (
 	"github.com/pratts/tts-study-assistant/backend/internal/database"
 	"github.com/pratts/tts-study-assistant/backend/internal/handlers"
 	"github.com/pratts/tts-study-assistant/backend/internal/middleware"
+	"github.com/pratts/tts-study-assistant/backend/internal/respond"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
+	"gorm.io/gorm"
 )
 
 const (
@@ -26,32 +34,51 @@ const (
 
 	authRateLimit      = 10 // requests per minute per IP on login/register
 	summarizeRateLimit = 10 // requests per minute per user
+
+	shutdownTimeout = 10 * time.Second
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	if err := run(); err != nil {
+		slog.Error("server stopped", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal("Invalid configuration: ", err)
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+	db, err := database.Connect(cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("connect database: %w", err)
 	}
 
-	// Connect to database
-	if err := database.Connect(cfg.DatabaseURL); err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	app := newApp(cfg)
+	app := newApp(cfg, db)
+	go cleanupRefreshTokens(ctx, services.NewAuthService(db, cfg.JWTSecret), time.Hour)
 
-	go cleanupRefreshTokens(services.NewAuthService(cfg), time.Hour)
+	errc := make(chan error, 1)
+	go func() {
+		slog.Info("server starting", "port", cfg.Port)
+		errc <- app.Listen(":" + cfg.Port)
+	}()
 
-	// Start server
-	log.Printf("Server starting on port %s", cfg.Port)
-	if err := app.Listen(":" + cfg.Port); err != nil {
-		log.Fatal("Failed to start server:", err)
+	select {
+	case err := <-errc:
+		return err
+	case <-ctx.Done():
+		slog.Info("shutting down")
+		return app.ShutdownWithTimeout(shutdownTimeout)
 	}
 }
 
 // newApp builds the HTTP server with middleware and routes.
-func newApp(cfg *config.Config) *fiber.App {
+func newApp(cfg *config.Config, db *gorm.DB) *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: customErrorHandler,
 		BodyLimit:    bodyLimit,
@@ -73,11 +100,11 @@ func newApp(cfg *config.Config) *fiber.App {
 		AllowHeaders: "Origin,Content-Type,Accept,Authorization",
 	}))
 
-	setupRoutes(app, cfg)
+	setupRoutes(app, cfg, db)
 	return app
 }
 
-func setupRoutes(app *fiber.App, cfg *config.Config) {
+func setupRoutes(app *fiber.App, cfg *config.Config, db *gorm.DB) {
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -86,16 +113,16 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 		})
 	})
 
-	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(cfg)
-	notesHandler := handlers.NewNotesHandler(
-		services.NewSummarizerService(cfg.OpenAIAPIKey, cfg.OpenAIModel, cfg.OpenAIBaseURL),
-	)
-	userHandler := handlers.NewUserHandler()
+	summarizer := services.NewSummarizerService(cfg.OpenAIAPIKey, cfg.OpenAIModel, cfg.OpenAIBaseURL)
+	users := services.NewUserService(db)
+	authHandler := handlers.NewAuthHandler(services.NewAuthService(db, cfg.JWTSecret), users)
+	notesHandler := handlers.NewNotesHandler(services.NewNotesService(db, summarizer))
+	userHandler := handlers.NewUserHandler(users)
+	requireAuth := middleware.Auth(cfg.JWTSecret)
 
 	authLimit := rateLimit(authRateLimit, func(c *fiber.Ctx) string { return c.IP() })
 	summarizeLimit := rateLimit(summarizeRateLimit, func(c *fiber.Ctx) string {
-		return c.Locals("user_id").(string)
+		return middleware.UserID(c).String()
 	})
 
 	// API routes
@@ -107,10 +134,10 @@ func setupRoutes(app *fiber.App, cfg *config.Config) {
 	auth.Post("/login", authLimit, authHandler.Login)
 	auth.Post("/refresh", authHandler.Refresh)
 	auth.Post("/logout", authHandler.Logout)
-	auth.Get("/verify", middleware.AuthMiddleware(cfg), authHandler.Verify)
+	auth.Get("/verify", requireAuth, authHandler.Verify)
 
 	// Protected routes
-	protected := api.Group("", middleware.AuthMiddleware(cfg))
+	protected := api.Group("", requireAuth)
 
 	// Notes routes (protected)
 	notes := protected.Group("/notes")
@@ -136,34 +163,35 @@ func rateLimit(max int, key func(*fiber.Ctx) string) fiber.Handler {
 		Expiration:   time.Minute,
 		KeyGenerator: key,
 		LimitReached: func(c *fiber.Ctx) error {
-			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
-				"error":   true,
-				"message": "Too many requests, please try again later",
-			})
+			return respond.Error(c, fiber.StatusTooManyRequests, "Too many requests, please try again later")
 		},
 	})
 }
 
-// cleanupRefreshTokens periodically deletes expired refresh tokens.
-func cleanupRefreshTokens(auth *services.AuthService, every time.Duration) {
-	for range time.Tick(every) {
-		if err := auth.CleanupExpiredRefreshTokens(); err != nil {
-			log.Println("refresh token cleanup failed:", err)
+// cleanupRefreshTokens deletes expired refresh tokens every interval until
+// ctx is cancelled.
+func cleanupRefreshTokens(ctx context.Context, auth *services.AuthService, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := auth.CleanupExpiredRefreshTokens(ctx); err != nil {
+				slog.Error("refresh token cleanup failed", "err", err)
+			}
 		}
 	}
 }
 
+// customErrorHandler renders errors returned by fiber itself (404, 405,
+// 413, panics recovered by middleware) in the API's error envelope.
 func customErrorHandler(c *fiber.Ctx, err error) error {
-	code := fiber.StatusInternalServerError
-	message := "Internal Server Error"
-
-	if e, ok := err.(*fiber.Error); ok {
-		code = e.Code
-		message = e.Message
+	var fe *fiber.Error
+	if errors.As(err, &fe) {
+		return respond.Error(c, fe.Code, fe.Message)
 	}
-
-	return c.Status(code).JSON(fiber.Map{
-		"error":   true,
-		"message": message,
-	})
+	slog.Error("unhandled error", "method", c.Method(), "path", c.Path(), "err", err)
+	return respond.Error(c, fiber.StatusInternalServerError, "Internal Server Error")
 }

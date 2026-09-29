@@ -1,12 +1,11 @@
 package services
 
 import (
+	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
-	"github.com/pratts/tts-study-assistant/backend/internal/config"
-	"github.com/pratts/tts-study-assistant/backend/internal/database"
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
 	"github.com/pratts/tts-study-assistant/backend/internal/password"
 	"github.com/pratts/tts-study-assistant/backend/internal/tokens"
@@ -15,125 +14,120 @@ import (
 )
 
 type AuthService struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db        *gorm.DB
+	jwtSecret string
 }
 
+// RegisterRequest carries a SHA-256 hex digest of the password, not the
+// raw password.
 type RegisterRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"` // Pre-hashed password from UI
-	Name     string `json:"name" validate:"required"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
 }
 
 type LoginRequest struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"` // Pre-hashed password from UI
+	Email    string `json:"email"`
+	Password string `json:"password"`
 	Source   string `json:"source"`
 }
 
-type AuthResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	User         struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
-	} `json:"user"`
-}
-
 type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token" validate:"required"`
+	RefreshToken string `json:"refresh_token"`
 }
 
-func NewAuthService(cfg *config.Config) *AuthService {
-	return &AuthService{
-		db:  database.DB,
-		cfg: cfg,
+type AuthResponse struct {
+	AccessToken  string          `json:"access_token"`
+	RefreshToken string          `json:"refresh_token"`
+	User         ProfileResponse `json:"user"`
+}
+
+func NewAuthService(db *gorm.DB, jwtSecret string) *AuthService {
+	return &AuthService{db: db, jwtSecret: jwtSecret}
+}
+
+func (s *AuthService) Register(ctx context.Context, req *RegisterRequest) (*AuthResponse, error) {
+	db := s.db.WithContext(ctx)
+
+	var exists bool
+	if err := db.Model(&models.User{}).Select("count(*) > 0").Where("email = ?", req.Email).Find(&exists).Error; err != nil {
+		return nil, err
 	}
-}
-
-func (s *AuthService) Register(req *RegisterRequest) (*AuthResponse, error) {
-	// Check if user already exists
-	var existingUser models.User
-	if err := s.db.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
-		return nil, errors.New("user already exists")
+	if exists {
+		return nil, ErrUserExists
 	}
 
 	hash, err := password.Hash(req.Password)
 	if err != nil {
 		return nil, err
 	}
-	user := models.User{
-		Email:    req.Email,
-		Password: hash,
-		Name:     req.Name,
-	}
-
-	if err := s.db.Create(&user).Error; err != nil {
+	user := models.User{Email: req.Email, Password: hash, Name: req.Name}
+	if err := db.Create(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) { // lost a concurrent registration race
-			return nil, errors.New("user already exists")
+			return nil, ErrUserExists
 		}
 		return nil, err
 	}
 
-	return s.issueSession(s.db, &user, tokens.SourceWeb, "")
+	return s.issueSession(db, &user, tokens.SourceWeb, "")
 }
 
-func (s *AuthService) Login(req *LoginRequest) (*AuthResponse, error) {
-	// Find user
+func (s *AuthService) Login(ctx context.Context, req *LoginRequest) (*AuthResponse, error) {
+	db := s.db.WithContext(ctx)
+
 	var user models.User
-	if err := s.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+	if err := db.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			password.SimulateVerify(req.Password)
-			return nil, errors.New("invalid credentials")
+			return nil, ErrInvalidCredentials
 		}
 		return nil, err
 	}
 
 	ok, needsRehash := password.Verify(user.Password, req.Password)
 	if !ok {
-		return nil, errors.New("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 	if needsRehash {
-		s.upgradePasswordHash(&user, req.Password)
+		s.upgradePasswordHash(db, &user, req.Password)
 	}
 
-	return s.issueSession(s.db, &user, tokens.NormalizeSource(req.Source), "")
+	return s.issueSession(db, &user, tokens.NormalizeSource(req.Source), "")
 }
 
 // upgradePasswordHash replaces a legacy password value with a bcrypt hash.
 // A failure is logged but does not block the login; it is retried next time.
-func (s *AuthService) upgradePasswordHash(user *models.User, secret string) {
+func (s *AuthService) upgradePasswordHash(db *gorm.DB, user *models.User, secret string) {
 	hash, err := password.Hash(secret)
 	if err == nil {
-		err = s.db.Model(user).Update("password", hash).Error
+		err = db.Model(user).Update("password", hash).Error
 	}
 	if err != nil {
-		log.Printf("password hash upgrade failed for user %s: %v", user.ID, err)
+		slog.Error("password hash upgrade failed", "user_id", user.ID, "err", err)
 	}
 }
 
 // Refresh rotates a refresh token. The old token is consumed by a single
 // DELETE ... RETURNING, so concurrent requests with the same token cannot
 // both succeed.
-func (s *AuthService) Refresh(req *RefreshRequest) (*AuthResponse, error) {
+func (s *AuthService) Refresh(ctx context.Context, rawToken string) (*AuthResponse, error) {
 	var resp *AuthResponse
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var old models.RefreshToken
 		res := tx.Clauses(clause.Returning{}).
-			Where("token = ? AND expires_at > ?", tokens.HashRefresh(req.RefreshToken), time.Now()).
+			Where("token = ? AND expires_at > ?", tokens.HashRefresh(rawToken), time.Now()).
 			Delete(&old)
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
-			return errors.New("invalid refresh token")
+			return ErrInvalidRefreshToken
 		}
 
 		var user models.User
 		if err := tx.First(&user, "id = ?", old.UserID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errors.New("invalid refresh token")
+				return ErrInvalidRefreshToken
 			}
 			return err
 		}
@@ -146,13 +140,20 @@ func (s *AuthService) Refresh(req *RefreshRequest) (*AuthResponse, error) {
 }
 
 // Logout revokes a refresh token. Unknown tokens are not an error.
-func (s *AuthService) Logout(refreshToken string) error {
-	return s.db.Where("token = ?", tokens.HashRefresh(refreshToken)).Delete(&models.RefreshToken{}).Error
+func (s *AuthService) Logout(ctx context.Context, rawToken string) error {
+	return s.db.WithContext(ctx).
+		Where("token = ?", tokens.HashRefresh(rawToken)).
+		Delete(&models.RefreshToken{}).Error
+}
+
+// CleanupExpiredRefreshTokens deletes all expired refresh tokens.
+func (s *AuthService) CleanupExpiredRefreshTokens(ctx context.Context) error {
+	return s.db.WithContext(ctx).Where("expires_at < ?", time.Now()).Delete(&models.RefreshToken{}).Error
 }
 
 // issueSession creates an access token and a stored refresh token.
 func (s *AuthService) issueSession(db *gorm.DB, user *models.User, source, deviceInfo string) (*AuthResponse, error) {
-	accessToken, err := tokens.IssueAccess(s.cfg.JWTSecret, user.ID.String(), user.Email, source)
+	accessToken, err := tokens.IssueAccess(s.jwtSecret, user.ID.String(), user.Email, source)
 	if err != nil {
 		return nil, err
 	}
@@ -174,23 +175,5 @@ func (s *AuthService) issueSession(db *gorm.DB, user *models.User, source, devic
 		return nil, err
 	}
 
-	resp := &AuthResponse{AccessToken: accessToken, RefreshToken: raw}
-	resp.User.ID = user.ID.String()
-	resp.User.Email = user.Email
-	resp.User.Name = user.Name
-	return resp, nil
-}
-
-// GetUserByID fetches a user by ID
-func (s *AuthService) GetUserByID(userID string) (*models.User, error) {
-	var user models.User
-	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
-// CleanupExpiredRefreshTokens deletes all expired refresh tokens from the database
-func (s *AuthService) CleanupExpiredRefreshTokens() error {
-	return s.db.Where("expires_at < ?", time.Now()).Delete(&models.RefreshToken{}).Error
+	return &AuthResponse{AccessToken: accessToken, RefreshToken: raw, User: toProfile(user)}, nil
 }

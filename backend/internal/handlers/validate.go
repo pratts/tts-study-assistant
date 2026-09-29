@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/mail"
 	"strings"
 	"unicode/utf8"
@@ -33,16 +34,18 @@ func validPassword(p string) bool {
 }
 
 // noteIDParam returns the :id path parameter if it is a valid UUID.
-func noteIDParam(c *fiber.Ctx) (string, bool) {
-	id := c.Params("id")
-	_, err := uuid.Parse(id)
+func noteIDParam(c *fiber.Ctx) (uuid.UUID, bool) {
+	id, err := uuid.Parse(c.Params("id"))
 	return id, err == nil
 }
 
-// noteFieldsError returns a message describing the first oversized field, or
-// "" when all fields are within bounds.
-func noteFieldsError(content, sourceURL, sourceTitle, domain string) string {
+// noteFieldsError returns a message describing the first invalid field, or
+// "" when all fields are valid. Metadata, when present, must be a JSON object
+// or null.
+func noteFieldsError(content, sourceURL, sourceTitle, domain string, metadata json.RawMessage) string {
 	switch {
+	case len(metadata) > 0 && string(metadata) != "null" && (metadata[0] != '{' || !json.Valid(metadata)):
+		return "Metadata must be a JSON object"
 	case utf8.RuneCountInString(content) > MaxContentRunes:
 		return "Content is too long"
 	case len(sourceURL) > maxURLLen:

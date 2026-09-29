@@ -88,7 +88,7 @@ func TestSummarizeDisabledWithoutKey(t *testing.T) {
 func TestSummarizeUpstreamError(t *testing.T) {
 	srv, _ := fakeOpenAI(t, http.StatusTooManyRequests, "")
 	_, err := NewSummarizerService("test-key", "m", srv.URL).Summarize(context.Background(), longText)
-	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSummarizerUpstream)
 	assert.Contains(t, err.Error(), "429")
 }
 
@@ -103,7 +103,7 @@ func TestSummarizeHonoursContext(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	_, err := NewSummarizerService("test-key", "m", srv.URL).Summarize(ctx, longText)
-	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSummarizerUpstream)
 	assert.Less(t, time.Since(start), 5*time.Second)
 	assert.True(t, strings.Contains(err.Error(), "deadline"), err.Error())
 }

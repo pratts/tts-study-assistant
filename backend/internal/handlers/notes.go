@@ -2,161 +2,133 @@ package handlers
 
 import (
 	"errors"
-	"log"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/pratts/tts-study-assistant/backend/internal/middleware"
+	"github.com/pratts/tts-study-assistant/backend/internal/respond"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
-	"github.com/pratts/tts-study-assistant/backend/pkg/utils"
 )
 
 type NotesHandler struct {
-	notesService *services.NotesService
-	summarizer   *services.SummarizerService
+	notes *services.NotesService
 }
 
-func NewNotesHandler(summarizer *services.SummarizerService) *NotesHandler {
-	return &NotesHandler{
-		notesService: services.NewNotesService(),
-		summarizer:   summarizer,
-	}
+func NewNotesHandler(notes *services.NotesService) *NotesHandler {
+	return &NotesHandler{notes: notes}
 }
 
-// GetNotes handles getting all notes for a user
+// GetNotes lists the caller's notes, newest first.
 func (h *NotesHandler) GetNotes(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(string)
-
-	// Parse pagination and filter params
-	page := c.QueryInt("page", 1)
-	pageSize := c.QueryInt("page_size", 10)
-	sourceURL := c.Query("source_url", "")
-	domain := c.Query("domain", "")
-
-	notes, err := h.notesService.GetNotes(userID, page, pageSize, sourceURL, domain)
+	notes, err := h.notes.GetNotes(c.UserContext(), middleware.UserID(c), services.NotesQuery{
+		Page:      c.QueryInt("page", 1),
+		PageSize:  c.QueryInt("page_size", 10),
+		SourceURL: c.Query("source_url"),
+		Domain:    c.Query("domain"),
+	})
 	if err != nil {
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to fetch notes")
+		return serviceError(c, err, "Failed to fetch notes")
 	}
-
-	return utils.SendSuccess(c, "Notes fetched successfully", notes)
+	return respond.OK(c, "Notes fetched successfully", notes)
 }
 
-// GetNote handles getting a specific note by ID
 func (h *NotesHandler) GetNote(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(string)
 	noteID, ok := noteIDParam(c)
 	if !ok {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid note ID")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid note ID")
 	}
-
-	note, err := h.notesService.GetNoteByID(noteID, userID)
+	note, err := h.notes.GetNote(c.UserContext(), middleware.UserID(c), noteID)
 	if err != nil {
-		if err.Error() == "note not found" {
-			return utils.SendError(c, fiber.StatusNotFound, "Note not found")
-		}
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to fetch note")
+		return noteError(c, err, "Failed to fetch note")
 	}
-
-	return utils.SendSuccess(c, "Note fetched successfully", note)
+	return respond.OK(c, "Note fetched successfully", note)
 }
 
-// CreateNote handles creating a new note
 func (h *NotesHandler) CreateNote(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(string)
 	var req services.CreateNoteRequest
-
 	if err := c.BodyParser(&req); err != nil {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid request body")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid request body")
 	}
-
 	if req.Content == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Content is required")
+		return respond.Error(c, fiber.StatusBadRequest, "Content is required")
 	}
-	if msg := noteFieldsError(req.Content, req.SourceURL, req.SourceTitle, req.Domain); msg != "" {
-		return utils.SendError(c, fiber.StatusBadRequest, msg)
+	if msg := noteFieldsError(req.Content, req.SourceURL, req.SourceTitle, req.Domain, req.Metadata); msg != "" {
+		return respond.Error(c, fiber.StatusBadRequest, msg)
 	}
 
-	note, err := h.notesService.CreateNote(&req, userID)
+	note, err := h.notes.CreateNote(c.UserContext(), middleware.UserID(c), &req)
 	if err != nil {
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to create note")
+		return serviceError(c, err, "Failed to create note")
 	}
-
-	return utils.SendSuccess(c, "Note created successfully", note)
+	return respond.OK(c, "Note created successfully", note)
 }
 
-// UpdateNote handles updating an existing note
+// UpdateNote applies a partial update; omitted fields are left unchanged.
 func (h *NotesHandler) UpdateNote(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(string)
 	noteID, ok := noteIDParam(c)
 	if !ok {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid note ID")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid note ID")
 	}
-
 	var req services.UpdateNoteRequest
 	if err := c.BodyParser(&req); err != nil {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid request body")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid request body")
 	}
-	if msg := noteFieldsError(req.Content, req.SourceURL, req.SourceTitle, req.Domain); msg != "" {
-		return utils.SendError(c, fiber.StatusBadRequest, msg)
+	if req.Content != nil && *req.Content == "" {
+		return respond.Error(c, fiber.StatusBadRequest, "Content cannot be empty")
+	}
+	if msg := noteFieldsError(deref(req.Content), deref(req.SourceURL), deref(req.SourceTitle), deref(req.Domain), req.Metadata); msg != "" {
+		return respond.Error(c, fiber.StatusBadRequest, msg)
 	}
 
-	note, err := h.notesService.UpdateNote(noteID, userID, &req)
+	note, err := h.notes.UpdateNote(c.UserContext(), middleware.UserID(c), noteID, &req)
 	if err != nil {
-		if err.Error() == "note not found" {
-			return utils.SendError(c, fiber.StatusNotFound, "Note not found")
-		}
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to update note")
+		return noteError(c, err, "Failed to update note")
 	}
-
-	return utils.SendSuccess(c, "Note updated successfully", note)
+	return respond.OK(c, "Note updated successfully", note)
 }
 
-// DeleteNote handles deleting a note
 func (h *NotesHandler) DeleteNote(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(string)
 	noteID, ok := noteIDParam(c)
 	if !ok {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid note ID")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid note ID")
 	}
-
-	err := h.notesService.DeleteNote(noteID, userID)
-	if err != nil {
-		if err.Error() == "note not found" {
-			return utils.SendError(c, fiber.StatusNotFound, "Note not found")
-		}
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to delete note")
+	if err := h.notes.DeleteNote(c.UserContext(), middleware.UserID(c), noteID); err != nil {
+		return noteError(c, err, "Failed to delete note")
 	}
-
-	return utils.SendSuccess(c, "Note deleted successfully")
+	return respond.OK(c, "Note deleted successfully")
 }
 
 // GetNotesStats returns the number of notes per unique domain for the user
 func (h *NotesHandler) GetNotesStats(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(string)
-	stats, err := h.notesService.GetNotesStats(userID)
+	stats, err := h.notes.GetNotesStats(c.UserContext(), middleware.UserID(c))
 	if err != nil {
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to fetch stats")
+		return serviceError(c, err, "Failed to fetch stats")
 	}
-	return utils.SendSuccess(c, "Notes stats fetched successfully", stats)
+	return respond.OK(c, "Notes stats fetched successfully", stats)
 }
 
-// SummarizeNote handles summarizing a note by ID
 func (h *NotesHandler) SummarizeNote(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(string)
 	noteID, ok := noteIDParam(c)
 	if !ok {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid note ID")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid note ID")
 	}
-	summary, err := h.notesService.SummarizeNote(c.UserContext(), noteID, userID, h.summarizer)
+	summary, err := h.notes.SummarizeNote(c.UserContext(), middleware.UserID(c), noteID)
 	if err != nil {
-		switch {
-		case err.Error() == "note not found":
-			return utils.SendError(c, fiber.StatusNotFound, "Note not found")
-		case err.Error() == "note changed during summarization":
-			return utils.SendError(c, fiber.StatusConflict, "Note changed during summarization, please retry")
-		case errors.Is(err, services.ErrSummarizerDisabled):
-			return utils.SendError(c, fiber.StatusServiceUnavailable, "Summarization is not configured")
-		}
-		log.Printf("summarize note %s: %v", noteID, err)
-		return utils.SendError(c, fiber.StatusBadGateway, "Failed to summarize note")
+		return noteError(c, err, "Failed to summarize note")
 	}
-	return utils.SendSuccess(c, "Note summarized successfully", fiber.Map{"summary": summary})
+	return respond.OK(c, "Note summarized successfully", fiber.Map{"summary": summary})
+}
+
+// noteError is serviceError plus 404 for missing notes.
+func noteError(c *fiber.Ctx, err error, fallback string) error {
+	if errors.Is(err, services.ErrNotFound) {
+		return respond.Error(c, fiber.StatusNotFound, "Note not found")
+	}
+	return serviceError(c, err, fallback)
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

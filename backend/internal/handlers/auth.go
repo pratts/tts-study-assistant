@@ -5,136 +5,107 @@ import (
 	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/pratts/tts-study-assistant/backend/internal/config"
+	"github.com/pratts/tts-study-assistant/backend/internal/middleware"
+	"github.com/pratts/tts-study-assistant/backend/internal/respond"
 	"github.com/pratts/tts-study-assistant/backend/internal/services"
-	"github.com/pratts/tts-study-assistant/backend/pkg/utils"
 )
 
 type AuthHandler struct {
-	authService *services.AuthService
+	auth  *services.AuthService
+	users *services.UserService
 }
 
-func NewAuthHandler(cfg *config.Config) *AuthHandler {
-	return &AuthHandler{
-		authService: services.NewAuthService(cfg),
-	}
+func NewAuthHandler(auth *services.AuthService, users *services.UserService) *AuthHandler {
+	return &AuthHandler{auth: auth, users: users}
 }
 
 // Register handles user registration
 func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	var req services.RegisterRequest
-
 	if err := c.BodyParser(&req); err != nil {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid request body")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	// Basic validation
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Email == "" || req.Password == "" || req.Name == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Email, password, and name are required")
+		return respond.Error(c, fiber.StatusBadRequest, "Email, password, and name are required")
 	}
 	email, ok := normalizeEmail(req.Email)
 	if !ok {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid email address")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid email address")
 	}
 	req.Email = email
 	if !validPassword(req.Password) || utf8.RuneCountInString(req.Name) > maxNameRunes {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid password or name")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid password or name")
 	}
 
-	response, err := h.authService.Register(&req)
+	resp, err := h.auth.Register(c.UserContext(), &req)
 	if err != nil {
-		if err.Error() == "user already exists" {
-			return utils.SendError(c, fiber.StatusConflict, "User already exists")
-		}
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to register user")
+		return serviceError(c, err, "Failed to register user")
 	}
-
-	return utils.SendSuccess(c, "User registered successfully", response)
+	return respond.OK(c, "User registered successfully", resp)
 }
 
 // Login handles user login
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	var req services.LoginRequest
-
 	if err := c.BodyParser(&req); err != nil {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid request body")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid request body")
 	}
-
-	// Basic validation
 	if req.Email == "" || req.Password == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Email and password are required")
+		return respond.Error(c, fiber.StatusBadRequest, "Email and password are required")
 	}
 	req.Email, _ = normalizeEmail(req.Email)
 	if !validPassword(req.Password) {
-		return utils.SendError(c, fiber.StatusUnauthorized, "Invalid credentials")
+		return respond.Error(c, fiber.StatusUnauthorized, "Invalid credentials")
 	}
 
-	response, err := h.authService.Login(&req)
+	resp, err := h.auth.Login(c.UserContext(), &req)
 	if err != nil {
-		if err.Error() == "invalid credentials" {
-			return utils.SendError(c, fiber.StatusUnauthorized, "Invalid credentials")
-		}
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to login")
+		return serviceError(c, err, "Failed to login")
 	}
-
-	return utils.SendSuccess(c, "Login successful", response)
+	return respond.OK(c, "Login successful", resp)
 }
 
-// Refresh handles token refresh
+// Refresh rotates a refresh token and issues a new access token.
 func (h *AuthHandler) Refresh(c *fiber.Ctx) error {
 	var req services.RefreshRequest
-
 	if err := c.BodyParser(&req); err != nil {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid request body")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid request body")
 	}
-
 	if req.RefreshToken == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Refresh token is required")
+		return respond.Error(c, fiber.StatusBadRequest, "Refresh token is required")
 	}
 
-	response, err := h.authService.Refresh(&req)
+	resp, err := h.auth.Refresh(c.UserContext(), req.RefreshToken)
 	if err != nil {
-		if err.Error() == "invalid refresh token" {
-			return utils.SendError(c, fiber.StatusUnauthorized, "Invalid refresh token")
-		}
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to refresh token")
+		return serviceError(c, err, "Failed to refresh token")
 	}
-
-	return utils.SendSuccess(c, "Token refreshed successfully", response)
+	return respond.OK(c, "Token refreshed successfully", resp)
 }
 
-// Logout handles user logout
+// Logout revokes the given refresh token.
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
-	var req struct {
-		RefreshToken string `json:"refresh_token"`
-	}
-
+	var req services.RefreshRequest
 	if err := c.BodyParser(&req); err != nil {
-		return utils.SendError(c, fiber.StatusBadRequest, "Invalid request body")
+		return respond.Error(c, fiber.StatusBadRequest, "Invalid request body")
 	}
-
 	if req.RefreshToken == "" {
-		return utils.SendError(c, fiber.StatusBadRequest, "Refresh token is required")
+		return respond.Error(c, fiber.StatusBadRequest, "Refresh token is required")
 	}
 
-	if err := h.authService.Logout(req.RefreshToken); err != nil {
-		return utils.SendError(c, fiber.StatusInternalServerError, "Failed to logout")
+	if err := h.auth.Logout(c.UserContext(), req.RefreshToken); err != nil {
+		return serviceError(c, err, "Failed to logout")
 	}
-
-	return utils.SendSuccess(c, "Logout successful")
+	return respond.OK(c, "Logout successful")
 }
 
-// Verify returns the authenticated user. It runs behind AuthMiddleware and
-// returns a bare user object because the extension depends on that shape.
+// Verify returns the authenticated user. It returns a bare user object, not
+// the usual envelope, because the extension depends on that shape.
 func (h *AuthHandler) Verify(c *fiber.Ctx) error {
-	user, err := h.authService.GetUserByID(c.Locals("user_id").(string))
+	profile, err := h.users.GetProfile(c.UserContext(), middleware.UserID(c))
 	if err != nil {
-		return utils.SendError(c, fiber.StatusUnauthorized, "User not found", "TOKEN_EXPIRED")
+		return respond.Error(c, fiber.StatusUnauthorized, "User not found", middleware.CodeTokenExpired)
 	}
-	return c.JSON(fiber.Map{
-		"id":    user.ID.String(),
-		"email": user.Email,
-		"name":  user.Name,
-	})
+	return c.JSON(profile)
 }

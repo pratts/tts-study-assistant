@@ -1,9 +1,10 @@
 package services
 
 import (
+	"context"
 	"errors"
 
-	"github.com/pratts/tts-study-assistant/backend/internal/database"
+	"github.com/google/uuid"
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
 	"github.com/pratts/tts-study-assistant/backend/internal/password"
 	"gorm.io/gorm"
@@ -20,91 +21,86 @@ type UpdateProfileRequest struct {
 	Email string `json:"email,omitempty"`
 }
 
-type UserProfileResponse struct {
+type ProfileResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Name  string `json:"name"`
 }
 
-func NewUserService() *UserService {
-	return &UserService{
-		db: database.DB,
-	}
+func NewUserService(db *gorm.DB) *UserService {
+	return &UserService{db: db}
 }
 
-func (s *UserService) GetProfile(userID string) (*UserProfileResponse, error) {
+func toProfile(u *models.User) ProfileResponse {
+	return ProfileResponse{ID: u.ID.String(), Email: u.Email, Name: u.Name}
+}
+
+func (s *UserService) find(db *gorm.DB, userID uuid.UUID) (*models.User, error) {
 	var user models.User
-	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
+	if err := db.First(&user, "id = ?", userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
+			return nil, ErrNotFound
 		}
 		return nil, err
 	}
-
-	response := &UserProfileResponse{
-		ID:    user.ID.String(),
-		Email: user.Email,
-		Name:  user.Name,
-	}
-
-	return response, nil
+	return &user, nil
 }
 
-func (s *UserService) UpdateProfile(userID string, req *UpdateProfileRequest) (*UserProfileResponse, error) {
-	var user models.User
-	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
-		}
+func (s *UserService) GetProfile(ctx context.Context, userID uuid.UUID) (*ProfileResponse, error) {
+	user, err := s.find(s.db.WithContext(ctx), userID)
+	if err != nil {
+		return nil, err
+	}
+	p := toProfile(user)
+	return &p, nil
+}
+
+func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, req *UpdateProfileRequest) (*ProfileResponse, error) {
+	db := s.db.WithContext(ctx)
+	user, err := s.find(db, userID)
+	if err != nil {
 		return nil, err
 	}
 
-	// Update fields if provided
+	changes := map[string]any{}
 	if req.Name != "" {
 		user.Name = req.Name
+		changes["name"] = req.Name
 	}
-
-	if req.Email != "" {
-		// Check if email is already taken by another user
-		var existingUser models.User
-		if err := s.db.Where("email = ? AND id != ?", req.Email, userID).First(&existingUser).Error; err == nil {
-			return nil, errors.New("email already taken")
-		}
+	if req.Email != "" && req.Email != user.Email {
 		user.Email = req.Email
+		changes["email"] = req.Email
 	}
-
-	if err := s.db.Save(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return nil, errors.New("email already taken")
+	if len(changes) > 0 {
+		if err := db.Model(user).Updates(changes).Error; err != nil {
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				return nil, ErrEmailTaken
+			}
+			return nil, err
 		}
-		return nil, err
 	}
 
-	response := &UserProfileResponse{
-		ID:    user.ID.String(),
-		Email: user.Email,
-		Name:  user.Name,
-	}
-
-	return response, nil
+	p := toProfile(user)
+	return &p, nil
 }
 
 // UpdatePassword verifies the current password, stores the new one and
 // revokes every refresh token so other sessions must log in again.
-func (s *UserService) UpdatePassword(userID, oldPassword, newPassword string) error {
-	var user models.User
-	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
+func (s *UserService) UpdatePassword(ctx context.Context, userID uuid.UUID, oldPassword, newPassword string) error {
+	db := s.db.WithContext(ctx)
+	user, err := s.find(db, userID)
+	if err != nil {
 		return err
 	}
 	if ok, _ := password.Verify(user.Password, oldPassword); !ok {
-		return errors.New("incorrect password")
+		return ErrIncorrectPassword
 	}
 	hash, err := password.Hash(newPassword)
 	if err != nil {
 		return err
 	}
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&user).Update("password", hash).Error; err != nil {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(user).Update("password", hash).Error; err != nil {
 			return err
 		}
 		return tx.Where("user_id = ?", user.ID).Delete(&models.RefreshToken{}).Error
