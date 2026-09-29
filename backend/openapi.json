@@ -87,7 +87,12 @@
                     "user": {
                         "$ref": "#/components/schemas/UserProfile"
                     }
-                }
+                },
+                "required": [
+                    "access_token",
+                    "refresh_token",
+                    "user"
+                ]
             },
             "RefreshRequest": {
                 "type": "object",
@@ -137,7 +142,13 @@
                         "type": "string",
                         "format": "date-time"
                     }
-                }
+                },
+                "required": [
+                    "id",
+                    "content",
+                    "created_at",
+                    "updated_at"
+                ]
             },
             "CreateNoteRequest": {
                 "type": "object",
@@ -210,7 +221,12 @@
                     "name": {
                         "type": "string"
                     }
-                }
+                },
+                "required": [
+                    "id",
+                    "email",
+                    "name"
+                ]
             },
             "UpdateProfileRequest": {
                 "type": "object",
@@ -240,7 +256,11 @@
                         "type": "string",
                         "description": "TOKEN_EXPIRED on every 401 from an authenticated endpoint"
                     }
-                }
+                },
+                "required": [
+                    "error",
+                    "message"
+                ]
             },
             "UpdatePasswordRequest": {
                 "type": "object",
@@ -270,7 +290,11 @@
                     "count": {
                         "type": "integer"
                     }
-                }
+                },
+                "required": [
+                    "domain",
+                    "count"
+                ]
             },
             "SummaryResponse": {
                 "type": "object",
@@ -279,7 +303,10 @@
                         "type": "string",
                         "description": "The summary, or \"unavailable\""
                     }
-                }
+                },
+                "required": [
+                    "summary"
+                ]
             },
             "SuccessResponse": {
                 "type": "object",
@@ -292,7 +319,10 @@
                         "type": "string"
                     },
                     "data": {}
-                }
+                },
+                "required": [
+                    "success"
+                ]
             }
         }
     },
@@ -329,7 +359,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/AuthResponse"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -400,7 +433,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/AuthResponse"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -471,7 +507,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/AuthResponse"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -643,7 +682,10 @@
                                                         "$ref": "#/components/schemas/Note"
                                                     }
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -696,7 +738,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/Note"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -764,7 +809,10 @@
                                                         "$ref": "#/components/schemas/NotesStats"
                                                     }
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -820,7 +868,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/Note"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -904,7 +955,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/Note"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -1047,7 +1101,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/SummaryResponse"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -1152,7 +1209,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/UserProfile"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
@@ -1215,7 +1275,10 @@
                                                 "data": {
                                                     "$ref": "#/components/schemas/UserProfile"
                                                 }
-                                            }
+                                            },
+                                            "required": [
+                                                "data"
+                                            ]
                                         }
                                     ]
                                 }
