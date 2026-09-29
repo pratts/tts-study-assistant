@@ -1,10 +1,12 @@
 # Backend — TTS Study Assistant
 
+[![Backend CI](https://github.com/pratts/tts-study-assistant/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/pratts/tts-study-assistant/actions/workflows/backend-ci.yml)
+
 Go/Fiber REST API for authentication, notes, AI summaries and user management. It serves the web app (`frontend/`) and the browser extension (`extension/`).
 
 ## Requirements
 
-- Go 1.24+
+- Go 1.26+ (a supported release; older toolchains carry known standard-library vulnerabilities)
 - PostgreSQL 13+ (no extensions required)
 
 ## Quick start
@@ -60,6 +62,25 @@ TEST_DATABASE_URL="postgres://localhost:5432/tts_test?sslmode=disable" go test -
 
 - DB-backed tests (services, migrations, the end-to-end API flow in `cmd/server/e2e_test.go`) each run in their own schema, which is dropped afterwards, so they are safe to run in parallel against a shared database.
 - The OpenAI API is faked with `httptest`; no key is needed.
+
+## CI
+
+`.github/workflows/backend-ci.yml` runs on every pull request and push to `main` that touches `backend/`, and weekly to pick up newly published advisories:
+
+| Job | Checks |
+| --- | ------ |
+| Build & lint | `go mod verify`, `go mod tidy -diff`, `gofmt`, `go vet`, `go build` |
+| Test | `go test -race` against a Postgres 16 service container; coverage in the job summary |
+| Vulnerability scan | `govulncheck`: fails when code reaches a known-vulnerable symbol |
+| Docker image | builds the production image |
+| **Backend CI passed** | aggregate status: require this check before merging or deploying |
+
+Run the same checks locally:
+
+```sh
+gofmt -l . && go vet ./... && go test -race ./...
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+```
 
 ## API
 
