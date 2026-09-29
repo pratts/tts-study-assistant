@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const pw = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"
+const pw = "correct horse battery staple"
 
 type client struct {
 	t     *testing.T
@@ -108,8 +108,12 @@ func TestAPIFlow(t *testing.T) {
 	status, _ = alice.do("PUT", "/api/v1/user/profile", map[string]string{"email": "bob@example.com"})
 	assert.Equal(t, 409, status)
 
-	status, _ = alice.do("PUT", "/api/v1/user/password", map[string]string{"old_password": "wrong", "new_password": "n"})
-	assert.Equal(t, 401, status)
+	// A wrong old password is 403 without TOKEN_EXPIRED: it must not end the session.
+	status, body = alice.do("PUT", "/api/v1/user/password", map[string]string{"old_password": "wrong", "new_password": "n"})
+	assert.Equal(t, 403, status)
+	assert.Nil(t, body["code"])
+	status, _ = alice.do("GET", "/api/v1/user/profile", nil)
+	assert.Equal(t, 200, status, "session still valid after a wrong old password")
 	status, _ = alice.do("PUT", "/api/v1/user/password", map[string]string{"old_password": pw, "new_password": "new"})
 	assert.Equal(t, 200, status)
 

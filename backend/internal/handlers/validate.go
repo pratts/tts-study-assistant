@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// Input bounds. Passwords arrive as a 64-char SHA-256 hex digest; bcrypt
-// rejects anything over 72 bytes.
+// Input bounds. Passwords are limited to 72 bytes because bcrypt rejects
+// longer input.
 const (
 	MaxContentRunes = 100_000
 	maxURLLen       = 2048

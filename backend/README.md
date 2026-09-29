@@ -102,7 +102,7 @@ The full reference is in [`openapi.json`](./openapi.json) (OpenAPI 3.0). All rou
 | GET / PUT | `/user/profile` | Bearer | name and email only |
 | PUT | `/user/password` | Bearer | revokes all sessions |
 
-Responses use `{success, message, data}` on success and `{error, message, code}` on failure. **Every 401 carries `code: "TOKEN_EXPIRED"`**; the web app and extension use it to trigger a refresh or a logout, so keep it stable.
+Responses use `{success, message, data}` on success and `{error, message, code}` on failure. On authenticated endpoints, **a 401 always means the session is invalid and carries `code: "TOKEN_EXPIRED"`**; clients end or refresh the session on it, so keep it stable. Failures that aren't about the session use other statuses (e.g. a wrong old password on `PUT /user/password` is `403`). The 401s from `/auth/login` and `/auth/refresh` (bad credentials or refresh token) carry no code.
 
 ### Notes
 
@@ -124,8 +124,9 @@ Responses use `{success, message, data}` on success and `{error, message, code}`
 
 ### Passwords
 
-- Clients send a SHA-256 hex digest of the password, never the raw password. The server stores that digest with **bcrypt**, so a leaked row cannot be replayed as a credential.
-- Legacy rows (pre-bcrypt) are compared in constant time and upgraded to bcrypt on the user's next successful login.
+- Clients send the raw password over HTTPS. The server stores only its **bcrypt** hash.
+- Passwords must be 1–72 **bytes** when UTF-8 encoded (bcrypt's limit), so a 72-character password with non-ASCII characters can be too long.
+- Stored values that are not bcrypt hashes never match; there is no legacy compare path.
 - Logins for unknown emails take as long as real ones, so timing does not reveal which emails exist.
 - Passwords change only through `PUT /user/password`, which verifies the current password and revokes every refresh token.
 
@@ -181,7 +182,7 @@ internal/services/   business logic; returns sentinel errors (services/errors.go
 internal/handlers/   HTTP handlers: input validation and error → status mapping
 internal/middleware/ JWT auth; exposes the caller's typed user ID
 internal/tokens/     access/refresh token issuing and parsing
-internal/password/   bcrypt hashing with legacy upgrade
+internal/password/   bcrypt hashing and verification
 internal/respond/    JSON response envelopes
 internal/testutil/   Postgres test harness (schema per test)
 ```
@@ -196,5 +197,5 @@ Upgrading from before these changes is automatic on first start, but note:
 
 - `JWT_SECRET` must be at least 32 characters.
 - Plaintext refresh tokens are deleted, and old access tokens (no issuer claim) are rejected, so **every user logs in once more**.
-- Existing passwords are upgraded to bcrypt as users log in.
+- **Raw-password contract (API 1.2.0):** accounts created while clients sent SHA-256 digests store bcrypt(digest) and can't log in with a raw password. Wipe the database (or have users re-register), and update every client to send raw passwords.
 - Foreign keys are switched to `ON DELETE CASCADE`, and new indexes are created.

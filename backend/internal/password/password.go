@@ -1,16 +1,9 @@
-// Package password hashes and verifies user credentials.
+// Package password hashes and verifies user passwords with bcrypt.
 //
-// Clients send a SHA-256 hex digest of the raw password. The server treats
-// that digest as the secret and stores it with bcrypt, so a leaked database
-// row can no longer be replayed as a login credential.
+// Clients send the raw password over HTTPS; only its bcrypt hash is stored.
 package password
 
-import (
-	"crypto/subtle"
-	"strings"
-
-	"golang.org/x/crypto/bcrypt"
-)
+import "golang.org/x/crypto/bcrypt"
 
 // Cost is the bcrypt work factor. Tests lower it to keep runs fast.
 var Cost = bcrypt.DefaultCost
@@ -28,23 +21,13 @@ func Hash(secret string) (string, error) {
 	return string(h), nil
 }
 
-// Verify reports whether secret matches stored. needsRehash is true when
-// stored is a legacy value saved before bcrypt was introduced; callers should
-// replace it with Hash(secret) after a successful match.
-func Verify(stored, secret string) (ok, needsRehash bool) {
-	if !isBcrypt(stored) {
-		ok = subtle.ConstantTimeCompare([]byte(stored), []byte(secret)) == 1
-		return ok, ok
-	}
-	return bcrypt.CompareHashAndPassword([]byte(stored), []byte(secret)) == nil, false
+// Verify reports whether secret matches the stored bcrypt hash.
+func Verify(stored, secret string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(stored), []byte(secret)) == nil
 }
 
 // SimulateVerify burns the same time as a real Verify. Use it when the user
 // lookup fails.
 func SimulateVerify(secret string) {
 	_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(secret))
-}
-
-func isBcrypt(s string) bool {
-	return strings.HasPrefix(s, "$2a$") || strings.HasPrefix(s, "$2b$") || strings.HasPrefix(s, "$2y$")
 }

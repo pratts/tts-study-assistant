@@ -2,8 +2,8 @@
     "openapi": "3.0.3",
     "info": {
         "title": "TTS Study Assistant API",
-        "version": "1.1.0",
-        "description": "API for TTS Study Assistant. Protected endpoints require a JWT Bearer access token. Clients send a SHA-256 hex digest of the password; the server stores it with bcrypt. Success responses use the envelope {success, message, data}; errors use {error, message, code}. Every 401 carries code TOKEN_EXPIRED, which clients use to trigger a token refresh.",
+        "version": "1.2.0",
+        "description": "API for TTS Study Assistant. Protected endpoints require a JWT Bearer access token. Clients send the raw password over HTTPS (1–72 bytes of UTF-8); the server stores only its bcrypt hash. Success responses use the envelope {success, message, data}; errors use {error, message, code}. On authenticated endpoints a 401 always means the session is invalid and carries code TOKEN_EXPIRED; 401s from /auth/login and /auth/refresh (bad credentials or refresh token) carry no code.",
         "license": {
             "name": "MIT",
             "url": "https://opensource.org/licenses/MIT"
@@ -40,8 +40,7 @@
                     "password": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 72,
-                        "description": "SHA-256 hex digest of the password (64 chars)"
+                        "description": "Raw password, 1–72 bytes when UTF-8 encoded (bcrypt's limit)"
                     },
                     "name": {
                         "type": "string",
@@ -63,8 +62,7 @@
                     "password": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 72,
-                        "description": "SHA-256 hex digest of the password (64 chars)"
+                        "description": "Raw password, 1–72 bytes when UTF-8 encoded (bcrypt's limit)"
                     },
                     "source": {
                         "type": "string",
@@ -240,7 +238,7 @@
                     },
                     "code": {
                         "type": "string",
-                        "description": "TOKEN_EXPIRED on every 401"
+                        "description": "TOKEN_EXPIRED on every 401 from an authenticated endpoint"
                     }
                 }
             },
@@ -254,14 +252,12 @@
                     "old_password": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 72,
-                        "description": "SHA-256 hex digest of the password (64 chars)"
+                        "description": "Raw password, 1–72 bytes when UTF-8 encoded (bcrypt's limit)"
                     },
                     "new_password": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 72,
-                        "description": "SHA-256 hex digest of the password (64 chars)"
+                        "description": "Raw password, 1–72 bytes when UTF-8 encoded (bcrypt's limit)"
                     }
                 }
             },
@@ -1305,7 +1301,17 @@
                         }
                     },
                     "401": {
-                        "description": "Incorrect old password, or missing/invalid access token",
+                        "description": "Missing, invalid or expired access token (code TOKEN_EXPIRED)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Incorrect old password",
                         "content": {
                             "application/json": {
                                 "schema": {

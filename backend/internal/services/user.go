@@ -92,7 +92,7 @@ func (s *UserService) UpdatePassword(ctx context.Context, userID uuid.UUID, oldP
 	if err != nil {
 		return err
 	}
-	if ok, _ := password.Verify(user.Password, oldPassword); !ok {
+	if !password.Verify(user.Password, oldPassword) {
 		return ErrIncorrectPassword
 	}
 	hash, err := password.Hash(newPassword)

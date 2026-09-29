@@ -15,8 +15,8 @@ import (
 func init() { password.Cost = bcrypt.MinCost }
 
 const (
-	testSecret = "test-secret-test-secret-test-secret"
-	clientHash = "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"
+	testSecret   = "test-secret-test-secret-test-secret"
+	testPassword = "correct horse battery staple"
 )
 
 var ctx = context.Background()
@@ -45,7 +45,7 @@ func newEnvWithSummarizer(t *testing.T, s *SummarizerService) *env {
 
 func (e *env) register(t *testing.T, email string) (*AuthResponse, uuid.UUID) {
 	t.Helper()
-	resp, err := e.auth.Register(ctx, &RegisterRequest{Email: email, Password: clientHash, Name: "Test"})
+	resp, err := e.auth.Register(ctx, &RegisterRequest{Email: email, Password: testPassword, Name: "Test"})
 	require.NoError(t, err)
 	return resp, uuid.MustParse(resp.User.ID)
 }

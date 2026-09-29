@@ -19,14 +19,14 @@ func TestRegisterStoresBcryptHash(t *testing.T) {
 
 	var u models.User
 	require.NoError(t, e.db.Where("email = ?", "a@example.com").First(&u).Error)
-	assert.NotEqual(t, clientHash, u.Password)
+	assert.NotEqual(t, testPassword, u.Password)
 	assert.True(t, strings.HasPrefix(u.Password, "$2"), "password must be bcrypt-hashed")
 }
 
 func TestRegisterDuplicate(t *testing.T) {
 	e := newEnv(t)
 	e.register(t, "a@example.com")
-	_, err := e.auth.Register(ctx, &RegisterRequest{Email: "a@example.com", Password: clientHash, Name: "Again"})
+	_, err := e.auth.Register(ctx, &RegisterRequest{Email: "a@example.com", Password: testPassword, Name: "Again"})
 	assert.ErrorIs(t, err, ErrUserExists)
 }
 
@@ -36,7 +36,7 @@ func TestRegisterConcurrentDuplicate(t *testing.T) {
 	errs := make(chan error, n)
 	for range n {
 		go func() {
-			_, err := e.auth.Register(ctx, &RegisterRequest{Email: "race@example.com", Password: clientHash, Name: "R"})
+			_, err := e.auth.Register(ctx, &RegisterRequest{Email: "race@example.com", Password: testPassword, Name: "R"})
 			errs <- err
 		}()
 	}
@@ -55,7 +55,7 @@ func TestLogin(t *testing.T) {
 	e := newEnv(t)
 	e.register(t, "a@example.com")
 
-	resp, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: clientHash})
+	resp, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: testPassword})
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp.AccessToken)
 	assert.Equal(t, "a@example.com", resp.User.Email)
@@ -63,24 +63,17 @@ func TestLogin(t *testing.T) {
 	_, err = e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: "wrong"})
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
 
-	_, err = e.auth.Login(ctx, &LoginRequest{Email: "missing@example.com", Password: clientHash})
+	_, err = e.auth.Login(ctx, &LoginRequest{Email: "missing@example.com", Password: testPassword})
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
 }
 
-func TestLoginUpgradesLegacyHash(t *testing.T) {
+func TestLoginRejectsNonBcryptStoredPassword(t *testing.T) {
 	e := newEnv(t)
-	legacy := models.User{Email: "old@example.com", Password: clientHash, Name: "Old"}
+	legacy := models.User{Email: "old@example.com", Password: testPassword, Name: "Old"}
 	require.NoError(t, e.db.Create(&legacy).Error)
 
-	_, err := e.auth.Login(ctx, &LoginRequest{Email: "old@example.com", Password: clientHash})
-	require.NoError(t, err)
-
-	var u models.User
-	require.NoError(t, e.db.First(&u, "id = ?", legacy.ID).Error)
-	assert.True(t, strings.HasPrefix(u.Password, "$2"), "legacy hash must be upgraded on login")
-
-	_, err = e.auth.Login(ctx, &LoginRequest{Email: "old@example.com", Password: clientHash})
-	assert.NoError(t, err, "login must keep working after the upgrade")
+	_, err := e.auth.Login(ctx, &LoginRequest{Email: "old@example.com", Password: testPassword})
+	assert.ErrorIs(t, err, ErrInvalidCredentials, "stored values that are not bcrypt hashes never match")
 }
 
 func TestLoginSourceControlsLifetime(t *testing.T) {
@@ -91,7 +84,7 @@ func TestLoginSourceControlsLifetime(t *testing.T) {
 		"extension": 90 * 24 * time.Hour,
 		"bogus":     30 * 24 * time.Hour,
 	} {
-		resp, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: clientHash, Source: source})
+		resp, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: testPassword, Source: source})
 		require.NoError(t, err)
 		var rt models.RefreshToken
 		require.NoError(t, e.db.First(&rt, "token = ?", tokens.HashRefresh(resp.RefreshToken)).Error)
