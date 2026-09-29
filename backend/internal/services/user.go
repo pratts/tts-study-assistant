@@ -5,6 +5,7 @@ import (
 
 	"github.com/pratts/tts-study-assistant/backend/internal/database"
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
+	"github.com/pratts/tts-study-assistant/backend/internal/password"
 	"gorm.io/gorm"
 )
 
@@ -12,10 +13,11 @@ type UserService struct {
 	db *gorm.DB
 }
 
+// UpdateProfileRequest deliberately has no password field: passwords change
+// only through UpdatePassword, which verifies the current one.
 type UpdateProfileRequest struct {
-	Name     string `json:"name,omitempty"`
-	Email    string `json:"email,omitempty"`
-	Password string `json:"password,omitempty"` // Pre-hashed password from UI
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
 }
 
 type UserProfileResponse struct {
@@ -71,11 +73,6 @@ func (s *UserService) UpdateProfile(userID string, req *UpdateProfileRequest) (*
 		user.Email = req.Email
 	}
 
-	if req.Password != "" {
-		// Store the pre-hashed password directly
-		user.Password = req.Password
-	}
-
 	if err := s.db.Save(&user).Error; err != nil {
 		return nil, err
 	}
@@ -89,14 +86,24 @@ func (s *UserService) UpdateProfile(userID string, req *UpdateProfileRequest) (*
 	return response, nil
 }
 
+// UpdatePassword verifies the current password, stores the new one and
+// revokes every refresh token so other sessions must log in again.
 func (s *UserService) UpdatePassword(userID, oldPassword, newPassword string) error {
 	var user models.User
 	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		return err
 	}
-	if user.Password != oldPassword {
+	if ok, _ := password.Verify(user.Password, oldPassword); !ok {
 		return errors.New("incorrect password")
 	}
-	user.Password = newPassword
-	return s.db.Save(&user).Error
+	hash, err := password.Hash(newPassword)
+	if err != nil {
+		return err
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&user).Update("password", hash).Error; err != nil {
+			return err
+		}
+		return tx.Where("user_id = ?", user.ID).Delete(&models.RefreshToken{}).Error
+	})
 }
