@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { useProfile, useUpdatePassword, useUpdateProfile } from '@/hooks/use-profile'
 import { applyServerError } from '@/lib/forms'
-import { LIMITS, passwordChangeSchema, profileSchema, type PasswordChangeValues, type ProfileValues } from '@/lib/validation'
+import { PASSWORD_HINT, passwordChangeSchema, profileSchema, type PasswordChangeValues, type ProfileValues } from '@/lib/validation'
 
 function ProfileForm({ name, email }: ProfileValues) {
   const updateProfile = useUpdateProfile()
@@ -87,7 +87,7 @@ function PasswordForm() {
           autoComplete="new-password"
           registration={form.register('newPassword')}
           error={errors.newPassword}
-          description={`Up to ${LIMITS.passwordBytes} bytes.`}
+          description={PASSWORD_HINT}
         />
         <TextField
           id="confirm-password"

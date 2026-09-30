@@ -10,7 +10,7 @@ import { FieldDescription, FieldGroup } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
 import { useRegister } from '@/hooks/use-auth'
 import { applyServerError } from '@/lib/forms'
-import { LIMITS, registerSchema, type RegisterValues } from '@/lib/validation'
+import { PASSWORD_HINT, registerSchema, type RegisterValues } from '@/lib/validation'
 
 export default function RegisterPage() {
   const [params] = useSearchParams()
@@ -51,7 +51,7 @@ export default function RegisterPage() {
             autoComplete="new-password"
             registration={form.register('password')}
             error={errors.password}
-            description={`Up to ${LIMITS.passwordBytes} bytes.`}
+            description={PASSWORD_HINT}
           />
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting && <Spinner />}
