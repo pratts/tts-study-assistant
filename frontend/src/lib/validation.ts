@@ -39,10 +39,14 @@ export const emailSchema = z
   .refine((v) => byteLength(v) <= LIMITS.emailBytes, 'Email is too long')
   .refine((v) => EMAIL_RE.test(v), 'Enter a valid email address')
 
+// bcrypt reads at most 72 bytes; the backend rejects longer passwords. Say
+// "characters" to people and explain why the limit can be lower.
+export const PASSWORD_HINT = `Up to ${LIMITS.passwordBytes} characters. Accented letters and emoji count as more than one.`
+
 export const passwordSchema = z
   .string()
   .min(1, 'Password is required')
-  .refine((v) => byteLength(v) <= LIMITS.passwordBytes, `Password must be at most ${LIMITS.passwordBytes} bytes`)
+  .refine((v) => byteLength(v) <= LIMITS.passwordBytes, `Password is too long. ${PASSWORD_HINT}`)
 
 export const nameSchema = z
   .string()

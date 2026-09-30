@@ -27,7 +27,13 @@ export function TextField({ id, label, registration, error, description, type = 
   return (
     <Field data-invalid={error ? true : undefined}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      {multiline ? <Textarea rows={rows} {...common} /> : <Input type={type} autoComplete={autoComplete} {...common} />}
+      {multiline ? (
+        // The textarea sizes itself to its content (field-sizing-content); cap
+        // it so long text scrolls inside the box instead of growing forever.
+        <Textarea rows={rows} className="max-h-60 overflow-y-auto" {...common} />
+      ) : (
+        <Input type={type} autoComplete={autoComplete} {...common} />
+      )}
       {description && <FieldDescription id={descriptionId}>{description}</FieldDescription>}
       <FieldError id={errorId} errors={[error]} />
     </Field>

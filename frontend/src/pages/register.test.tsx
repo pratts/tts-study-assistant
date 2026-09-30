@@ -36,7 +36,7 @@ describe('register page', () => {
     await screen.findByLabelText('Name')
     await fill(user, { name: 'A', email: 'Bob <bob@example.com>', password: 'é'.repeat(37) })
     expect(await screen.findByText('Enter a valid email address')).toBeInTheDocument()
-    expect(screen.getByText('Password must be at most 72 bytes')).toBeInTheDocument()
+    expect(screen.getByText(/Password is too long/)).toBeInTheDocument()
     expect(db.users).toHaveLength(0)
   })
 

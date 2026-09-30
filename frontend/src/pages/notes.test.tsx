@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { MESSAGES } from '@/api/client'
 import { alice } from '@/test/fixtures'
@@ -144,13 +144,33 @@ describe('notes page', () => {
     const { user, router } = renderApp('/notes?page=1')
     await waitFor(() => expect(rows()).toHaveLength(4))
 
-    await user.type(screen.getByLabelText('Filter by source URL'), 'https://only.example.com/this{Enter}')
+    await user.type(screen.getByLabelText('Filter by source URL'), 'https://only.example.com/this') // no Enter: applies as you type
     await waitFor(() => expect(currentPath(router)).toBe('/notes?source=https%3A%2F%2Fonly.example.com%2Fthis'))
     await waitFor(() => expect(rows()).toHaveLength(1))
     expect(screen.getByText('The only match')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Clear source filter' }))
     await waitFor(() => expect(rows()).toHaveLength(4))
+  })
+
+  it('shows nothing, not stale rows, when the typed URL matches no note', async () => {
+    seedNotes(alice.id, 3)
+    const { user, router } = renderApp('/notes')
+    await waitFor(() => expect(rows()).toHaveLength(3))
+
+    await user.type(screen.getByLabelText('Filter by source URL'), 'https://nothing.example')
+    await waitFor(() => expect(currentPath(router)).toBe('/notes?source=https%3A%2F%2Fnothing.example'))
+    expect(await screen.findByText('No notes from this source')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('follows the URL when the filter changes from outside', async () => {
+    seedNotes(alice.id, 2)
+    const { router } = renderApp('/notes?source=https%3A%2F%2Fa.example')
+    expect(await screen.findByLabelText('Filter by source URL')).toHaveValue('https://a.example')
+    await act(() => router.navigate('/notes'))
+    await waitFor(() => expect(screen.getByLabelText('Filter by source URL')).toHaveValue(''))
+    await waitFor(() => expect(rows()).toHaveLength(2))
   })
 
   it('shows the empty state and an error with retry', async () => {

@@ -73,7 +73,7 @@ export function NoteFormDialog({ open, note, onOpenChange, onSaved }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
         <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit note' : 'New note'}</DialogTitle>

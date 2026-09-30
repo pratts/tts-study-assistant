@@ -1,5 +1,5 @@
 import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, NotebookTextIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
 import type { Note } from '@/api/types'
 import { CopyButton } from '@/components/copy-button'
@@ -22,6 +22,7 @@ import { formatDate } from '@/lib/notes'
 import { displayDomain, truncate } from '@/lib/utils'
 
 const PAGE_SIZES = [10, 25, 50, 100] as const
+const FILTER_DEBOUNCE_MS = 300
 
 function positiveInt(value: string | null, fallback: number) {
   const n = Number(value)
@@ -42,6 +43,13 @@ export default function NotesPage() {
   const [deleting, setDeleting] = useState<Note | null>(null)
   const [sourceInput, setSourceInput] = useState(sourceUrl)
 
+  // Follow the URL when it changes from outside (back/forward, clear).
+  const [appliedSource, setAppliedSource] = useState(sourceUrl)
+  if (sourceUrl !== appliedSource) {
+    setAppliedSource(sourceUrl)
+    if (sourceInput.trim() !== sourceUrl) setSourceInput(sourceUrl)
+  }
+
   const notes = useNotesPage(page, pageSize, sourceUrl)
 
   const update = (changes: Record<string, string | number | null>) =>
@@ -57,6 +65,14 @@ export default function NotesPage() {
   /** After any change to the set of notes, the list restarts at page 1. */
   const restart = () => update({ page: 1 })
 
+  // Apply the source filter as the user types, once they pause.
+  useEffect(() => {
+    const next = sourceInput.trim()
+    if (next === sourceUrl) return
+    const timer = setTimeout(() => update({ source: next, page: 1 }), FILTER_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  })
+
   const applyFilter = (e: FormEvent) => {
     e.preventDefault()
     update({ source: sourceInput.trim(), page: 1 })
@@ -71,26 +87,30 @@ export default function NotesPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <form onSubmit={applyFilter} role="search" className="flex w-full max-w-md items-end gap-2">
-          <div className="flex flex-1 flex-col gap-1.5">
-            <Label htmlFor="source-filter">Filter by source URL</Label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <form onSubmit={applyFilter} role="search" className="flex w-full max-w-md flex-col gap-1.5">
+          <Label htmlFor="source-filter">Filter by source URL</Label>
+          <div className="flex gap-2">
             <Input
               id="source-filter"
               type="url"
               placeholder="https://example.com/article"
               value={sourceInput}
               onChange={(e) => setSourceInput(e.target.value)}
+              aria-describedby="source-filter-hint"
             />
-          </div>
-          <Button type="submit" variant="outline" size="icon" aria-label="Apply source filter">
-            <SearchIcon />
-          </Button>
-          {sourceUrl && (
-            <Button type="button" variant="ghost" size="icon" aria-label="Clear source filter" onClick={clearFilter}>
-              <XIcon />
+            <Button type="submit" variant="outline" size="icon" aria-label="Apply source filter">
+              <SearchIcon />
             </Button>
-          )}
+            {sourceUrl && (
+              <Button type="button" variant="ghost" size="icon" aria-label="Clear source filter" onClick={clearFilter}>
+                <XIcon />
+              </Button>
+            )}
+          </div>
+          <p id="source-filter-hint" className="text-xs text-muted-foreground">
+            Shows notes saved from exactly this URL.
+          </p>
         </form>
         <Button onClick={() => setCreating(true)}>
           <PlusIcon /> New note
