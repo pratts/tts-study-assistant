@@ -7,7 +7,10 @@ export function useNotesPage(page: number, pageSize: number, sourceUrl: string) 
   return useQuery({
     queryKey: queryKeys.notesPage(page, pageSize, sourceUrl),
     queryFn: ({ signal }) => listNotes({ page, pageSize, sourceUrl: sourceUrl || undefined }, signal),
-    placeholderData: keepPreviousData,
+    // Keep the current rows while paging, but not across filter changes:
+    // rows from another filter would look like matches.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2].sourceUrl === sourceUrl ? keepPreviousData(previous) : undefined,
   })
 }
 

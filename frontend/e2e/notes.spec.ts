@@ -22,7 +22,14 @@ test('empty state, then create, view and copy a note', async ({ page, context })
 
   await page.getByRole('button', { name: 'New note' }).first().click()
   const dialog = page.getByRole('dialog', { name: 'New note' })
-  await dialog.getByLabel('Content').fill('Photosynthesis converts light into chemical energy.')
+  // Long content stays inside a capped, scrollable box.
+  const content = dialog.getByLabel('Content')
+  await content.fill(Array.from({ length: 80 }, (_, i) => `Line ${i + 1}`).join('\n'))
+  const box = await content.evaluate((el) => ({ client: el.clientHeight, scroll: el.scrollHeight }))
+  expect(box.client).toBeLessThanOrEqual(240) // max-h-60
+  expect(box.scroll).toBeGreaterThan(box.client)
+  await expect(dialog.getByRole('button', { name: 'Create note' })).toBeInViewport()
+  await content.fill('Photosynthesis converts light into chemical energy.')
   await dialog.getByLabel('Source title (optional)').fill('Biology 101')
   await dialog.getByLabel('Source URL (optional)').fill('https://news.bbc.co.uk/science/photosynthesis')
   await dialog.getByRole('button', { name: 'Create note' }).click()
@@ -77,10 +84,13 @@ test('paginate, change page size and filter by source URL', async ({ page }) => 
   await expect(page).toHaveURL('/notes?size=25')
   await expect(rows).toHaveCount(12)
 
+  // Applies as you type (no Enter); a URL with no notes shows nothing.
   await page.getByLabel('Filter by source URL').fill('https://example.com/bulk/3')
-  await page.getByLabel('Filter by source URL').press('Enter')
   await expect(rows).toHaveCount(1)
   await expect(rows.first()).toContainText('Bulk note 3')
+  await page.getByLabel('Filter by source URL').fill('https://example.com/nothing-here')
+  await expect(page.getByText('No notes from this source')).toBeVisible()
+  await expect(rows).toHaveCount(0)
   await page.getByRole('button', { name: 'Clear source filter' }).click()
   await expect(rows).toHaveCount(12)
 })
