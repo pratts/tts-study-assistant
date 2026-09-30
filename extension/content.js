@@ -92,18 +92,20 @@ function createActionButton() {
                     title: document.title || 'PDF Document'
                 });
 
-                if (response.success) {
-                    if (response.summary === "unavailable") {
-                        showSummaryModal("Summary unavailable - text may be too short or incomplete for summarization.", "unavailable");
-                    } else if (response.summary) {
-                        showSummaryModal(response.summary);
-                    }
+                if (!response || !response.success) {
+                    showSummaryModal(response?.error || 'Could not summarize the selection.', 'unavailable');
+                } else if (response.summary === 'unavailable') {
+                    showSummaryModal('Summary unavailable - text may be too short or incomplete for summarization.', 'unavailable');
+                } else {
+                    showSummaryModal(response.summary);
                 }
 
                 hideActionButton();
                 window.getSelection().removeAllRanges();
             } catch (error) {
                 console.error('Error summarizing:', error);
+            } finally {
+                // Ready for the next selection.
                 summarizeBtn.textContent = 'Summarize';
                 summarizeBtn.disabled = false;
             }
@@ -256,15 +258,22 @@ function showSummaryModal(summary, type = "success") {
     const title = isUnavailable ? "Summary Unavailable" : "Summary";
     const contentClass = isUnavailable ? "tts-summary-content unavailable" : "tts-summary-content";
 
-    modal.innerHTML = `
-        <div class="${contentClass}">
-            <h3>${title}</h3>
-            <p>${summary}</p>
-            <div class="modal-actions">
-                <button class="tts-btn close-modal">Close</button>
-            </div>
-        </div>
-    `;
+    // Built with textContent: the summary is AI output derived from page text
+    // and must never be parsed as HTML inside the page.
+    const content = document.createElement('div');
+    content.className = contentClass;
+    const heading = document.createElement('h3');
+    heading.textContent = title;
+    const body = document.createElement('p');
+    body.textContent = summary;
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'tts-btn close-modal';
+    closeBtn.textContent = 'Close';
+    actions.appendChild(closeBtn);
+    content.append(heading, body, actions);
+    modal.appendChild(content);
     document.body.appendChild(modal);
 
     // Add event listeners

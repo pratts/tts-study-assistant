@@ -1,21 +1,20 @@
 // Background service worker - handles extension logic
 console.log('TTS Study Assistant - Background service worker loaded');
 
-import { AuthManager } from './js/auth-manager.js';
-import { ApiClient } from './js/api-client.js';
+import { ApiClient, SUMMARY_UNAVAILABLE } from './js/api-client.js';
+import { errorMessage } from './js/errors.js';
+import { TtsEngine } from './js/tts-engine.js';
 
-const authManager = new AuthManager();
 const apiClient = new ApiClient();
 
-// State management
-let ttsState = {
-    isPlaying: false,
-    isPaused: false,
-    currentText: '',
-    queue: [],
-    currentPosition: 0,
-    currentUtterance: null
-};
+const engine = new TtsEngine({
+    tts: chrome.tts,
+    getSettings: async () => (await chrome.storage.sync.get('settings')).settings || {},
+    onChange: (state) => {
+        // The popup may be closed; nobody is listening then.
+        chrome.runtime.sendMessage({ action: 'stateUpdate', state }).catch(() => {});
+    },
+});
 
 // Initialize default settings
 chrome.runtime.onInstalled.addListener(() => {
@@ -75,36 +74,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             break;
 
         case 'speak':
-            handleSpeakRequest(request.text, request.options, sendResponse);
-            return true; // Will respond asynchronously
+            // An explicit play replaces what is playing (the old "queue decision"
+            // response was never handled by any caller, so it silently did nothing).
+            engine.play(request.text).then(() => sendResponse({ status: 'speaking' }));
+            return true;
 
         case 'pause':
-            pauseSpeaking();
-            sendResponse({ status: 'paused', state: ttsState });
+            engine.pause();
+            sendResponse({ state: engine.snapshot() });
             break;
 
         case 'resume':
-            resumeSpeaking();
-            sendResponse({ status: 'resumed', state: ttsState });
-            break;
+            engine.resume().then(() => sendResponse({ state: engine.snapshot() }));
+            return true;
 
         case 'stop':
-            stopSpeaking();
-            sendResponse({ status: 'stopped' });
-            break;
+            engine.stop().then(() => sendResponse({ state: engine.snapshot() }));
+            return true;
+
+        case 'seek':
+            engine.seek(request.fraction).then(() => sendResponse({ state: engine.snapshot() }));
+            return true;
 
         case 'getState':
-            sendResponse({ state: ttsState });
+            sendResponse({ state: engine.snapshot() });
             break;
 
         case 'appendToQueue':
-            appendToQueue(request.text);
-            sendResponse({ status: 'appended', queue: ttsState.queue });
+            engine.enqueue(request.text);
+            sendResponse({ state: engine.snapshot() });
             break;
 
         case 'replaceQueue':
-            replaceQueue(request.text);
-            sendResponse({ status: 'replaced', queue: ttsState.queue });
+            engine.play(request.text).then(() => sendResponse({ state: engine.snapshot() }));
+            return true;
+
+        case 'refreshBadge':
+            updateNoteBadge();
+            break;
+
+        case 'clearBadge':
+            chrome.action.setBadgeText({ text: '' });
             break;
 
         case 'getSettings':
@@ -114,219 +124,67 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return true; // Will respond asynchronously
 
         case 'triggerSummarize':
-            handleMessageSummarize(request);
-            break;
+            handleMessageSummarize(request, sendResponse);
+            return true; // Will respond asynchronously
         default:
             sendResponse({ status: 'unknown action' });
     }
 });
 
-async function handleMessageSummarize(request) {
+// Summarize a page selection: the selection is not a note yet, so it is saved
+// first and then summarized (one note per request, never a duplicate of an
+// existing note).
+async function handleMessageSummarize(request, sendResponse) {
     try {
         const isAuthenticated = await ApiClient.isAuthenticated();
         if (!isAuthenticated) {
-            sendResponse({ success: false, error: 'NOT_AUTHENTICATED' });
+            sendResponse({ success: false, error: 'Please log in from the extension popup first.' });
             return;
         }
-
-        // Create note with the data from content script
         const note = await apiClient.createNote({
             content: request.text,
             source_url: request.url,
             source_title: request.title
         });
-
-        // Get summary
-        const summary = await apiClient.summarize(note.id);
-
         updateNoteBadge();
-
-        // Check if summary is unavailable
-        if (summary.summary === "unavailable") {
-            sendResponse({
-                success: true,
-                summary: "unavailable",
-                message: "Summary unavailable - text may be too short or incomplete"
-            });
-        } else {
-            sendResponse({
-                success: true,
-                summary: summary.summary || summary.content
-            });
-        }
+        const { summary } = await apiClient.summarize(note.id);
+        sendResponse({ success: true, summary });
     } catch (error) {
         console.error('Failed to summarize:', error);
-        sendResponse({ success: false, error: error.message });
+        sendResponse({ success: false, error: errorMessage(error) });
     }
-    return true; // Will respond asynchronously
 }
 
-// Handle keyboard command
-chrome.commands.onCommand.addListener((command) => {
-    if (command === 'speak-selection') {
-        // Send message to active tab's content script
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]) {
-                chrome.tabs.sendMessage(tabs[0].id, { action: 'speakSelection' });
-            }
-        });
+// Keyboard command declared in manifest.json ("save-selection", Alt+S).
+chrome.commands.onCommand.addListener(async (command) => {
+    if (command !== 'save-selection') return;
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || typeof tab.id !== 'number') return;
+    try {
+        const { text } = await chrome.tabs.sendMessage(tab.id, { action: 'getSelection' });
+        if (!text) return;
+        if (!(await ApiClient.isAuthenticated())) {
+            notify('Login Required', 'Please login to save notes. Click the extension icon.');
+            return;
+        }
+        await apiClient.createNote({ content: text, source_url: tab.url, source_title: tab.title });
+        notify('Note Saved!', 'Your note has been saved successfully.');
+        updateNoteBadge();
+    } catch (error) {
+        console.error('Failed to save selection:', error);
+        notify('Could not save the note', errorMessage(error));
     }
 });
 
-// Handle speak request with queue management
-async function handleSpeakRequest(text, options = {}, sendResponse) {
-    // If currently playing, ask user what to do
-    if (ttsState.isPlaying || ttsState.isPaused) {
-        sendResponse({
-            status: 'queue_decision_needed',
-            currentText: ttsState.currentText,
-            newText: text
-        });
-        return;
-    }
-
-    // Otherwise, start speaking immediately
-    ttsState.currentText = text;
-    ttsState.queue = [];
-    await speak(text, options);
-    sendResponse({ status: 'speaking' });
+function notify(title, message) {
+    chrome.notifications.create({ type: 'basic', iconUrl: 'icons/icon-48.png', title, message });
 }
 
-// Append text to queue
-function appendToQueue(text) {
-    ttsState.queue.push(text);
-
-    // If not currently playing anything, start speaking
-    if (!ttsState.isPlaying && !ttsState.isPaused) {
-        processQueue();
-    }
-}
-
-// Replace queue with new text
-function replaceQueue(text) {
-    stopSpeaking();
-    ttsState.currentText = text;
-    ttsState.queue = [text];
-    speak(text);
-}
-
-// Process queue
-async function processQueue() {
-    if (ttsState.queue.length === 0) {
-        ttsState.isPlaying = false;
-        return;
-    }
-
-    const nextText = ttsState.queue.shift();
-    ttsState.currentText = nextText;
-    await speak(nextText);
-}
-
-// Text-to-speech function
-async function speak(text, options = {}) {
-    // Get settings from storage
-    const data = await chrome.storage.sync.get(['settings']);
-    const settings = data.settings || {};
-
-    // Stop any current speech
-    chrome.tts.stop();
-
-    // Update state
-    ttsState.isPlaying = true;
-    ttsState.isPaused = false;
-
-    // Prepare TTS options
-    const ttsOptions = {
-        rate: options.rate || settings.rate || 1.0,
-        pitch: options.pitch || settings.pitch || 1.0,
-        volume: options.volume || settings.volume || 1.0,
-        enqueue: false,
-
-        onEvent: (event) => {
-            handleTTSEvent(event);
-        }
-    };
-
-    // If specific voice is set, use it
-    if (settings.voice && settings.voice !== 'default') {
-        ttsOptions.voiceName = settings.voice;
-    }
-
-    // Speak the text
-    return new Promise((resolve) => {
-        chrome.tts.speak(text, ttsOptions, () => {
-            if (chrome.runtime.lastError) {
-                console.error('TTS error:', chrome.runtime.lastError);
-                ttsState.isPlaying = false;
-            }
-            resolve();
-        });
-    });
-}
-
-// Handle TTS events
-function handleTTSEvent(event) {
-    console.log('TTS Event:', event.type);
-
-    switch (event.type) {
-        case 'start':
-            ttsState.isPlaying = true;
-            ttsState.isPaused = false;
-            break;
-
-        case 'end':
-            ttsState.isPlaying = false;
-            ttsState.isPaused = false;
-            // Process next item in queue
-            processQueue();
-            break;
-
-        case 'word':
-            // Track current position for resume functionality
-            if (event.charIndex !== undefined) {
-                ttsState.currentPosition = event.charIndex;
-            }
-            break;
-
-        case 'error':
-            console.error('TTS error:', event.errorMessage);
-            ttsState.isPlaying = false;
-            ttsState.isPaused = false;
-            break;
-    }
-
-    // Notify popup of state changes
-    chrome.runtime.sendMessage({
-        action: 'stateUpdate',
-        state: ttsState
-    }).catch(() => {
-        // Popup might not be open, ignore error
-    });
-}
-
-// Pause speaking
-function pauseSpeaking() {
-    chrome.tts.pause();
-    ttsState.isPaused = true;
-    ttsState.isPlaying = false;
-}
-
-// Resume speaking
-function resumeSpeaking() {
-    chrome.tts.resume();
-    ttsState.isPaused = false;
-    ttsState.isPlaying = true;
-}
-
-// Stop speaking and clear queue
-function stopSpeaking() {
-    chrome.tts.stop();
-    ttsState.isPlaying = false;
-    ttsState.isPaused = false;
-    ttsState.currentText = '';
-    ttsState.queue = [];
-    ttsState.currentPosition = 0;
-}
+// A speed change while playing takes effect at the current word.
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !changes.settings) return;
+    if (changes.settings.oldValue?.rate !== changes.settings.newValue?.rate) engine.applyRate();
+});
 
 // Listen for tab updates to inject content script if needed
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -351,17 +209,18 @@ async function handleSaveNote(noteData, sendResponse) {
         sendResponse({ success: true, note: response });
     } catch (error) {
         console.error('Failed to save note:', error);
-        sendResponse({ success: false, error: error.message });
+        sendResponse({ success: false, error: errorMessage(error) });
     }
 }
 
-// Update badge to show note count
+// Update badge to show the total note count (sum of per-domain stats; a page
+// of GET /notes would cap the count at its page size).
 async function updateNoteBadge() {
     try {
         const isAuthenticated = await ApiClient.isAuthenticated();
         if (!isAuthenticated) return;
-        const notes = await apiClient.getNotes();
-        const count = notes.length;
+        const stats = await apiClient.getNotesStats();
+        const count = stats.reduce((sum, s) => sum + s.count, 0);
         chrome.action.setBadgeText({
             text: count > 0 ? count.toString() : ''
         });
@@ -470,7 +329,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 const summary = await apiClient.summarize(note.id);
 
                 // Check if summary is unavailable
-                if (summary.summary === "unavailable") {
+                if (summary.summary === SUMMARY_UNAVAILABLE) {
                     chrome.notifications.create({
                         type: 'basic',
                         iconUrl: 'icons/icon-48.png',
@@ -487,7 +346,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                     });
                 }
             } catch (error) {
-                console.error('Failed to save note:', error);
+                console.error('Failed to summarize:', error);
+                notify('Could not summarize', errorMessage(error));
             }
             break;
     }
