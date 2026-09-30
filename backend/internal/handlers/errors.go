@@ -20,7 +20,9 @@ func serviceError(c *fiber.Ctx, err error, fallback string) error {
 	case errors.Is(err, services.ErrInvalidCredentials):
 		return respond.Error(c, fiber.StatusUnauthorized, "Invalid credentials")
 	case errors.Is(err, services.ErrIncorrectPassword):
-		return respond.Error(c, fiber.StatusUnauthorized, "Incorrect old password")
+		// 403, not 401: on authenticated routes a 401 always means the
+		// session is invalid, and clients end the session on it.
+		return respond.Error(c, fiber.StatusForbidden, "Incorrect old password")
 	case errors.Is(err, services.ErrInvalidRefreshToken):
 		return respond.Error(c, fiber.StatusUnauthorized, "Invalid refresh token")
 	case errors.Is(err, services.ErrNoteChanged):

@@ -14,13 +14,13 @@ func TestUpdatePassword(t *testing.T) {
 	_, uid := e.register(t, "a@example.com")
 
 	assert.ErrorIs(t, e.users.UpdatePassword(ctx, uid, "wrong", "new-hash"), ErrIncorrectPassword)
-	require.NoError(t, e.users.UpdatePassword(ctx, uid, clientHash, "new-hash"))
+	require.NoError(t, e.users.UpdatePassword(ctx, uid, testPassword, "new-hash"))
 
 	var tokens int64
 	e.db.Model(&models.RefreshToken{}).Where("user_id = ?", uid).Count(&tokens)
 	assert.Zero(t, tokens, "password change must revoke refresh tokens")
 
-	_, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: clientHash})
+	_, err := e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: testPassword})
 	assert.ErrorIs(t, err, ErrInvalidCredentials, "old password must stop working")
 	_, err = e.auth.Login(ctx, &LoginRequest{Email: "a@example.com", Password: "new-hash"})
 	assert.NoError(t, err)

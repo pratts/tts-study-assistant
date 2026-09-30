@@ -11,16 +11,12 @@ import (
 func init() { Cost = bcrypt.MinCost }
 
 func TestHashAndVerify(t *testing.T) {
-	h, err := Hash("secret")
+	h, err := Hash("correct horse")
 	require.NoError(t, err)
-	assert.NotEqual(t, "secret", h)
+	assert.NotEqual(t, "correct horse", h)
 
-	ok, rehash := Verify(h, "secret")
-	assert.True(t, ok)
-	assert.False(t, rehash)
-
-	ok, _ = Verify(h, "wrong")
-	assert.False(t, ok)
+	assert.True(t, Verify(h, "correct horse"))
+	assert.False(t, Verify(h, "wrong"))
 }
 
 func TestHashIsSalted(t *testing.T) {
@@ -29,14 +25,7 @@ func TestHashIsSalted(t *testing.T) {
 	assert.NotEqual(t, a, b)
 }
 
-func TestVerifyLegacy(t *testing.T) {
-	legacy := "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"
-
-	ok, rehash := Verify(legacy, legacy)
-	assert.True(t, ok)
-	assert.True(t, rehash, "legacy match must request a rehash")
-
-	ok, rehash = Verify(legacy, "other")
-	assert.False(t, ok)
-	assert.False(t, rehash)
+func TestVerifyRejectsNonBcryptStoredValue(t *testing.T) {
+	// A plaintext or pre-bcrypt value must never be treated as a match.
+	assert.False(t, Verify("secret", "secret"))
 }

@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"time"
 
 	"github.com/pratts/tts-study-assistant/backend/internal/models"
@@ -18,8 +17,6 @@ type AuthService struct {
 	jwtSecret string
 }
 
-// RegisterRequest carries a SHA-256 hex digest of the password, not the
-// raw password.
 type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -84,27 +81,11 @@ func (s *AuthService) Login(ctx context.Context, req *LoginRequest) (*AuthRespon
 		return nil, err
 	}
 
-	ok, needsRehash := password.Verify(user.Password, req.Password)
-	if !ok {
+	if !password.Verify(user.Password, req.Password) {
 		return nil, ErrInvalidCredentials
-	}
-	if needsRehash {
-		s.upgradePasswordHash(db, &user, req.Password)
 	}
 
 	return s.issueSession(db, &user, tokens.NormalizeSource(req.Source), "")
-}
-
-// upgradePasswordHash replaces a legacy password value with a bcrypt hash.
-// A failure is logged but does not block the login; it is retried next time.
-func (s *AuthService) upgradePasswordHash(db *gorm.DB, user *models.User, secret string) {
-	hash, err := password.Hash(secret)
-	if err == nil {
-		err = db.Model(user).Update("password", hash).Error
-	}
-	if err != nil {
-		slog.Error("password hash upgrade failed", "user_id", user.ID, "err", err)
-	}
 }
 
 // Refresh rotates a refresh token. The old token is consumed by a single
