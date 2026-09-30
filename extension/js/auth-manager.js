@@ -1,147 +1,138 @@
-// AuthManager for Chrome Extension
+// Session storage and auth API calls, shared by the popup and the background
+// worker (both read the same chrome.storage.local keys).
 import { API_URL } from './config.js';
+import { ApiError, MESSAGES, toApiError } from './errors.js';
 
-export class AuthManager {
-    constructor() {
-        this.API_URL = API_URL;
-        this.ACCESS_KEY = 'access_token';
-        this.REFRESH_KEY = 'refresh_token';
-        this.USER_KEY = 'user';
-        this.EXP_KEY = 'access_token_expiry';
-        this.REFRESH_EXP_KEY = 'refresh_token_expiry';
-        this.REFRESH_ALARM = 'refresh_token_alarm';
-    }
+const KEYS = {
+    access: 'access_token',
+    refresh: 'refresh_token',
+    user: 'user',
+    expiry: 'access_token_expiry',
+};
 
-    async hashPassword(password) {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
-        return Array.from(new Uint8Array(buf)).map(x => x.toString(16).padStart(2, '0')).join('');
-    }
+// Refresh a little before expiry so a request never races the deadline.
+const EXPIRY_SKEW_MS = 30 * 1000;
 
-    async login(email, password) {
-        const hashed = await this.hashPassword(password);
-        const resp = await fetch(`${this.API_URL}/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password: hashed, source: 'extension' })
-        });
-        const data = await resp.json();
-        if (!resp.ok || !data.data) return { success: false, message: data.message || 'Login failed' };
-        await this._storeTokens(data.data);
-        this.setupTokenRefreshAlarm();
-        return { success: true, user: data.data.user };
-    }
-
-    async checkSession() {
-        const tokens = await this._getTokens();
-        if (!tokens.access_token) return { loggedIn: false };
-        // Verify token
-        const verify = await fetch(`${this.API_URL}/auth/verify`, {
-            headers: { 'Authorization': `Bearer ${tokens.access_token}` }
-        });
-        if (verify.ok) {
-            const user = await verify.json();
-            return { loggedIn: true, user };
-        } else {
-            // Try refresh
-            const refreshed = await this.refreshToken();
-            if (refreshed.success) {
-                return { loggedIn: true, user: refreshed.user };
-            }
-            await this.logout();
-            return { loggedIn: false };
-        }
-    }
-
-    async refreshToken() {
-        const tokens = await this._getTokens();
-        if (!tokens.refresh_token) return { success: false };
-        const resp = await fetch(`${this.API_URL}/auth/refresh`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refresh_token: tokens.refresh_token })
-        });
-        const data = await resp.json();
-        if (!resp.ok || !data.data) return { success: false };
-        await this._storeTokens(data.data);
-        this.setupTokenRefreshAlarm();
-        return { success: true, user: data.data.user };
-    }
-
-    async logout() {
-        const tokens = await this._getTokens();
-        if (tokens.refresh_token) {
-            await fetch(`${this.API_URL}/auth/logout`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: tokens.refresh_token })
-            });
-        }
-        await chrome.storage.local.remove([this.ACCESS_KEY, this.REFRESH_KEY, this.USER_KEY, this.EXP_KEY, this.REFRESH_EXP_KEY]);
-        chrome.alarms.clear(this.REFRESH_ALARM);
-    }
-
-    setupTokenRefreshAlarm() {
-        this._getTokens().then(tokens => {
-            if (!tokens.access_token_expiry) return;
-            // Set alarm 5 minutes before expiry
-            const alarmTime = tokens.access_token_expiry - Date.now() - 5 * 60 * 1000;
-            if (alarmTime > 0) {
-                chrome.alarms.create(this.REFRESH_ALARM, { when: Date.now() + alarmTime });
-            }
-        });
-    }
-
-    async getAccessToken() {
-        const tokens = await this._getTokens();
-        if (!tokens.access_token) return null;
-        if (tokens.access_token_expiry && Date.now() > tokens.access_token_expiry) {
-            const refreshed = await this.refreshToken();
-            if (refreshed.success) {
-                return (await this._getTokens()).access_token;
-            }
-            return null;
-        }
-        return tokens.access_token;
-    }
-
-    // --- Internal helpers ---
-    async _storeTokens(data) {
-        // Decode JWT to get expiry
-        const decode = (token) => {
-            try {
-                const payload = JSON.parse(atob(token.split('.')[1]));
-                return payload.exp ? payload.exp * 1000 : null;
-            } catch { return null; }
-        };
-        const access_token_expiry = decode(data.access_token);
-        const refresh_token_expiry = Date.now() + 90 * 24 * 60 * 60 * 1000; // fallback 90 days
-        await chrome.storage.local.set({
-            [this.ACCESS_KEY]: data.access_token,
-            [this.REFRESH_KEY]: data.refresh_token,
-            [this.USER_KEY]: data.user,
-            [this.EXP_KEY]: access_token_expiry,
-            [this.REFRESH_EXP_KEY]: refresh_token_expiry
-        });
-    }
-
-    async _getTokens() {
-        return new Promise((resolve) => {
-            chrome.storage.local.get([
-                this.ACCESS_KEY, this.REFRESH_KEY, this.USER_KEY, this.EXP_KEY, this.REFRESH_EXP_KEY
-            ], (result) => {
-                resolve({
-                    access_token: result[this.ACCESS_KEY],
-                    refresh_token: result[this.REFRESH_KEY],
-                    user: result[this.USER_KEY],
-                    access_token_expiry: result[this.EXP_KEY],
-                    refresh_token_expiry: result[this.REFRESH_EXP_KEY]
-                });
-            });
-        });
+function jwtExpiry(token) {
+    try {
+        const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        const exp = JSON.parse(atob(payload)).exp;
+        return typeof exp === 'number' ? exp * 1000 : null;
+    } catch {
+        return null;
     }
 }
 
-// Export for use in popup and background
-if (typeof window !== 'undefined') {
-    window.AuthManager = AuthManager;
-} 
+async function postJson(path, body) {
+    let resp;
+    try {
+        resp = await fetch(`${API_URL}${path}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(body),
+        });
+    } catch {
+        throw new ApiError(0, MESSAGES.network);
+    }
+    if (!resp.ok) throw await toApiError(resp);
+    const json = await resp.json().catch(() => null);
+    if (!json || !json.data) throw new ApiError(resp.status, MESSAGES.unexpected);
+    return json.data;
+}
+
+export class AuthManager {
+    constructor() {
+        this._refreshing = null;
+    }
+
+    /**
+     * Logs in with the raw password (sent over HTTPS; the server stores only a
+     * bcrypt hash). `source: 'extension'` gets the longer extension session.
+     */
+    async login(email, password) {
+        const data = await postJson('/auth/login', { email, password, source: 'extension' });
+        await this._store(data);
+        return data.user;
+    }
+
+    async register(name, email, password) {
+        const data = await postJson('/auth/register', { name, email, password });
+        await this._store(data);
+        return data.user;
+    }
+
+    /** Revokes the refresh token (best effort) and clears the local session. */
+    async logout() {
+        const { [KEYS.refresh]: refreshToken } = await chrome.storage.local.get(KEYS.refresh);
+        await this.clearSession();
+        if (refreshToken) {
+            try {
+                await fetch(`${API_URL}/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken }),
+                });
+            } catch {
+                // Offline: the token expires on its own.
+            }
+        }
+    }
+
+    async clearSession() {
+        await chrome.storage.local.remove(Object.values(KEYS));
+    }
+
+    async getUser() {
+        const { [KEYS.user]: user } = await chrome.storage.local.get(KEYS.user);
+        return user || null;
+    }
+
+    /** A valid access token, refreshing it first if it is about to expire. */
+    async getAccessToken() {
+        const stored = await chrome.storage.local.get([KEYS.access, KEYS.expiry]);
+        const token = stored[KEYS.access];
+        if (!token) return null;
+        const expiry = stored[KEYS.expiry];
+        if (expiry && Date.now() > expiry - EXPIRY_SKEW_MS) {
+            return (await this.refreshToken()) ? (await chrome.storage.local.get(KEYS.access))[KEYS.access] : null;
+        }
+        return token;
+    }
+
+    /**
+     * Rotates the refresh token. Refresh tokens are single-use on the server,
+     * so concurrent callers in this context share one request. Returns false
+     * (and clears the session) when the server rejects the token.
+     */
+    refreshToken() {
+        if (!this._refreshing) {
+            this._refreshing = this._refresh().finally(() => {
+                this._refreshing = null;
+            });
+        }
+        return this._refreshing;
+    }
+
+    async _refresh() {
+        const { [KEYS.refresh]: refreshToken } = await chrome.storage.local.get(KEYS.refresh);
+        if (!refreshToken) return false;
+        try {
+            const data = await postJson('/auth/refresh', { refresh_token: refreshToken });
+            await this._store(data);
+            return true;
+        } catch (error) {
+            // A rejected token is final; a network error is not.
+            if (error instanceof ApiError && error.status === 401) await this.clearSession();
+            return false;
+        }
+    }
+
+    async _store(data) {
+        await chrome.storage.local.set({
+            [KEYS.access]: data.access_token,
+            [KEYS.refresh]: data.refresh_token,
+            [KEYS.user]: data.user,
+            [KEYS.expiry]: jwtExpiry(data.access_token),
+        });
+    }
+}
