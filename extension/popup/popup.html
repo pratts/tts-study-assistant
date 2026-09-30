@@ -2,99 +2,124 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=400, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=380, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>Study Assistant</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="popup-container">
-        <header class="popup-header">
-            <div class="header-content">
-                <div class="header-title">
-                    <span class="logo">📚</span>
-                    <span>Study Assistant</span>
-                </div>
-                <div class="header-auth" id="auth-header">
-                    <button class="header-btn" id="login-btn">Login</button>
-                    <button class="header-btn" id="signup-btn">Sign Up</button>
+    <div class="popup">
+        <header class="header">
+            <div class="brand">
+                <span class="brand-mark" id="brand-mark"></span>
+                <span>Study Assistant</span>
+            </div>
+
+            <div id="logged-out-actions" class="header-actions">
+                <button type="button" class="header-btn" id="login-btn">Log in</button>
+                <button type="button" class="header-btn" id="signup-btn">Sign up</button>
+            </div>
+
+            <div id="account" class="account hidden">
+                <button type="button" id="menu-btn" class="icon-btn menu-btn" aria-label="Account menu"
+                    aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu"></button>
+                <div id="account-menu" class="menu hidden" role="menu" aria-label="Account">
+                    <div class="menu-user">
+                        <span id="menu-name" class="menu-name"></span>
+                        <span id="menu-email" class="menu-email"></span>
+                    </div>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitem" data-path="/profile" data-icon="user">Profile</button>
+                    <button type="button" role="menuitem" data-path="/notes" data-icon="notebookText">View all notes</button>
+                    <button type="button" role="menuitem" data-path="/privacy-policy" data-icon="shield">Privacy</button>
+                    <div class="menu-sep" role="separator"></div>
+                    <button type="button" role="menuitem" id="logout-btn" class="danger" data-icon="logOut">Log out</button>
                 </div>
             </div>
         </header>
-        
-        <main class="popup-main">
-            <!-- Player Controls (shown when playing) -->
-            <div id="player-controls" class="player-controls hidden">
-                <button id="play-pause-btn" class="control-btn">▶️ Play</button>
-                <button id="stop-btn" class="control-btn">⏹️ Stop</button>
-                <div id="now-playing" class="now-playing"></div>
-            </div>
-            
-            <!-- Speed Control -->
-            <div class="speed-control">
-                <label for="rate-slider">Speed</label>
-                <input type="range" id="rate-slider" min="0.5" max="3" step="0.1" value="1">
-                <span class="slider-value" id="rate-value">1.0x</span>
-            </div>
-            
-            <!-- Notes Section -->
-            <div id="notes-section" class="notes-section">
-                <h3>Notes from this site</h3>
-                <div id="notes-carousel" class="notes-carousel">
-                    <!-- Note cards will be inserted here -->
+
+        <main class="main">
+            <!-- Playback: shown while a text is loaded -->
+            <section id="player" class="card player hidden" aria-label="Playback">
+                <p id="now-playing" class="now-playing"></p>
+                <div class="scrubber">
+                    <span id="elapsed" class="time">0:00</span>
+                    <input type="range" id="scrubber" min="0" max="1000" step="1" value="0" aria-label="Playback position">
+                    <span id="total" class="time">0:00</span>
                 </div>
-                <button id="view-all-notes" class="btn-text">View All Notes →</button>
-            </div>
-            
-            <!-- Empty State -->
-            <div id="empty-state" class="empty-state">
-                <!-- <p>No notes from this site yet.</p> -->
-                <p class="hint">Right-click selected text → Study Assistant → Save Note</p>
-            </div>
+                <div class="transport">
+                    <button type="button" id="stop-btn" class="icon-btn" aria-label="Stop"></button>
+                    <button type="button" id="play-pause-btn" class="play-btn" aria-label="Play"></button>
+                    <span class="transport-spacer" aria-hidden="true"></span>
+                </div>
+            </section>
+
+            <!-- Speed: four steps -->
+            <section class="card speed" aria-labelledby="speed-label">
+                <span id="speed-label" class="section-label">Speed</span>
+                <input type="range" id="rate-slider" min="0" max="3" step="1" value="1" aria-labelledby="speed-label">
+                <div class="ticks" id="rate-ticks"></div>
+            </section>
+
+            <!-- Notes from this site: one at a time -->
+            <section id="notes-section" class="notes hidden" aria-labelledby="notes-heading">
+                <div class="notes-head">
+                    <h2 id="notes-heading">Notes from this site</h2>
+                    <span id="notes-count" class="count-badge"></span>
+                </div>
+                <div class="carousel" id="carousel" tabindex="0" role="region" aria-roledescription="carousel" aria-labelledby="notes-heading">
+                    <button type="button" class="icon-btn nav" id="prev-btn" aria-label="Previous note"></button>
+                    <div class="slide" id="slide" aria-live="polite"></div>
+                    <button type="button" class="icon-btn nav" id="next-btn" aria-label="Next note"></button>
+                </div>
+                <div class="dots" id="dots" role="group" aria-label="Choose a note"></div>
+            </section>
+
+            <section id="status" class="status">
+                <p id="status-text" class="status-text"></p>
+                <p id="status-hint" class="hint">Select text on any page and choose <strong>Save &amp; Play</strong>, or right-click → Study Assistant.</p>
+                <button type="button" id="retry-btn" class="btn-secondary hidden">Try again</button>
+            </section>
         </main>
+
+        <footer id="footer" class="footer">
+            <button type="button" id="privacy-link" class="link-btn">Privacy policy</button>
+        </footer>
     </div>
-    
-    <!-- Login Modal -->
-    <div class="modal-overlay" id="login-modal-overlay">
-        <div class="modal-box">
-            <button class="modal-close" id="login-close">&times;</button>
-            <h2>Welcome Back</h2>
-            <form id="login-form">
-                <div class="form-group">
-                    <label for="login-email">Email</label>
-                    <input type="email" id="login-email" required autocomplete="username">
-                </div>
-                <div class="form-group">
-                    <label for="login-password">Password</label>
-                    <input type="password" id="login-password" required autocomplete="current-password">
-                </div>
-                <button type="submit" class="modal-btn">Sign In</button>
-            </form>
-        </div>
+
+    <!-- Log in -->
+    <div class="modal-overlay" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title" hidden>
+        <form class="modal-box" id="login-form" novalidate>
+            <button type="button" class="icon-btn modal-close" data-close aria-label="Close">×</button>
+            <h2 id="login-title">Welcome back</h2>
+            <p class="form-error hidden" role="alert"></p>
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" required autocomplete="username">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" required autocomplete="current-password">
+            <button type="submit" class="btn-primary">Log in</button>
+        </form>
     </div>
-    
-    <!-- Signup Modal -->
-    <div class="modal-overlay" id="signup-modal-overlay">
-        <div class="modal-box">
-            <button class="modal-close" id="signup-close">&times;</button>
-            <h2>Create Account</h2>
-            <form id="signup-form">
-                <div class="form-group">
-                    <label for="signup-name">Name</label>
-                    <input type="text" id="signup-name" required autocomplete="name">
-                </div>
-                <div class="form-group">
-                    <label for="signup-email">Email</label>
-                    <input type="email" id="signup-email" required autocomplete="username">
-                </div>
-                <div class="form-group">
-                    <label for="signup-password">Password</label>
-                    <input type="password" id="signup-password" required autocomplete="new-password">
-                </div>
-                <button type="submit" class="modal-btn">Create Account</button>
-            </form>
-        </div>
+
+    <!-- Sign up -->
+    <div class="modal-overlay" id="signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-title" hidden>
+        <form class="modal-box" id="signup-form" novalidate>
+            <button type="button" class="icon-btn modal-close" data-close aria-label="Close">×</button>
+            <h2 id="signup-title">Create account</h2>
+            <p class="form-error hidden" role="alert"></p>
+            <label for="signup-name">Name</label>
+            <input type="text" id="signup-name" required autocomplete="name">
+            <label for="signup-email">Email</label>
+            <input type="email" id="signup-email" required autocomplete="username">
+            <label for="signup-password">Password</label>
+            <input type="password" id="signup-password" required autocomplete="new-password" aria-describedby="signup-password-hint">
+            <p id="signup-password-hint" class="field-hint">Up to 72 characters. Accented letters and emoji count as more than one.</p>
+            <button type="submit" class="btn-primary">Create account</button>
+        </form>
     </div>
-    
+
+    <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
+
     <script type="module" src="popup.js"></script>
 </body>
 </html>
