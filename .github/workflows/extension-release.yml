@@ -1,0 +1,111 @@
+name: Extension release
+
+# When a change to extension/ reaches main (a merged PR is a push to main),
+# packages the extension and publishes it as a GitHub Release tagged
+# extension-v<version>, with notes listing only extension/ changes.
+#   - New version  → new tag and release with the zip attached.
+#   - Same version → the release's zip is replaced, its tag moves to the new
+#                    commit and the notes are refreshed (only if extension/
+#                    changed since the tag; otherwise nothing happens).
+on:
+  push:
+    branches: [main]
+    paths: ["extension/**"]
+  workflow_dispatch:
+
+# Write access applies only to this workflow's token: it creates and moves
+# extension-v* tags and their releases. Other workflows stay read-only.
+permissions:
+  contents: write
+
+concurrency:
+  group: extension-release
+  cancel-in-progress: false # releases are processed one at a time, in order
+
+jobs:
+  release:
+    name: Package and release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # history and tags, for the release notes
+
+      - name: Read version from manifest.json
+        id: meta
+        run: |
+          version=$(jq -er '.version' extension/manifest.json)
+          # Chrome accepts 1-4 dot-separated integers.
+          if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,3}$ ]]; then
+            echo "::error file=extension/manifest.json::Invalid version \"$version\"" && exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "zip=tts-study-assistant-extension-v${version}.zip"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Plan release
+        id: plan
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          .github/scripts/extension-release-plan.sh "$VERSION" release-notes.md | tee -a "$GITHUB_OUTPUT"
+          cat release-notes.md
+
+      - name: Create zip
+        if: steps.plan.outputs.action != 'skip'
+        working-directory: extension
+        env:
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          # manifest.json at the zip root (Chrome Web Store layout);
+          # development-only files are left out.
+          zip -r -X "../${ZIP}" . \
+            -x 'tests/*' 'package.json' 'package-lock.json' 'README.md' \
+               'node_modules/*' '*.DS_Store' '.*'
+          unzip -l "../${ZIP}"
+          unzip -p "../${ZIP}" manifest.json | jq -e '.manifest_version == 3' > /dev/null
+
+      - name: Create release
+        if: steps.plan.outputs.action == 'create'
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          gh release create "$TAG" "$ZIP" \
+            --target "$GITHUB_SHA" \
+            --title "Extension v${VERSION}" \
+            --notes-file release-notes.md
+
+      - name: Update release (same version, new extension changes)
+        if: steps.plan.outputs.action == 'update'
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          # Keep the tag on the commit the zip is built from.
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/${TAG}"
+          gh release upload "$TAG" "$ZIP" --clobber
+          gh release edit "$TAG" --notes-file release-notes.md
+
+      - name: Summary
+        env:
+          ACTION: ${{ steps.plan.outputs.action }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          {
+            echo "### Extension release: ${ACTION}"
+            echo ""
+            case "$ACTION" in
+              create) echo "Created release \`${TAG}\` with \`${ZIP}\`." ;;
+              update) echo "Replaced \`${ZIP}\` on \`${TAG}\` and moved the tag to \`${GITHUB_SHA::7}\`." ;;
+              skip)   echo "\`${TAG}\` already exists and \`extension/\` has not changed since; nothing to do." ;;
+            esac
+            echo ""
+            echo "[Releases](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases)"
+          } >> "$GITHUB_STEP_SUMMARY"
