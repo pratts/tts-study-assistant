@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Decides what the extension release workflow does for the current commit and
-# writes the release notes. Run from the repository root (full history and
-# tags fetched).
+# Decides whether the extension release workflow publishes a release for the
+# current commit, and writes the release notes. Run from the repository root
+# with full history and tags.
 #
 #   .github/scripts/extension-release-plan.sh <version> <notes-file>
 #
 # Prints key=value lines (for $GITHUB_OUTPUT):
 #   tag=extension-v<version>
 #   action=create  no release for this version yet
-#   action=update  release exists and extension/ changed since its tag:
-#                  replace the zip, move the tag, refresh the notes
-#   action=skip    release exists and extension/ is unchanged
+#   action=skip    a release for this version already exists (the version
+#                  was not bumped; the PR version check should prevent this)
+#   previous=<previous extension-v* tag, if any>
 set -euo pipefail
 
 version="$1"
@@ -19,17 +19,13 @@ tag="extension-v${version}"
 head="$(git rev-parse HEAD)"
 
 if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-  if git diff --quiet "${tag}" "${head}" -- extension/; then
-    action=skip
-  else
-    action=update
-  fi
+  action=skip
 else
   action=create
 fi
 
-# Notes cover the extension changes since the previous version's release
-# (every extension change ever, for the first release).
+# Notes cover the extension changes since the previous release (every
+# extension change ever, for the first release).
 previous="$(git tag -l 'extension-v*' --sort=-v:refname | grep -vx "${tag}" | head -n 1 || true)"
 range="${previous:+${previous}..}${head}"
 
