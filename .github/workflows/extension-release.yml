@@ -1,0 +1,105 @@
+name: Extension release
+
+# When a change to the shipped extension reaches main (a merged PR is a push
+# to main), packages it and publishes a GitHub Release tagged
+# extension-v<version> with the zip attached and notes listing only
+# extension/ changes. Every release is a new version: the Chrome Web Store
+# rejects re-uploads of a published version, and the PR check
+# (extension-version-check.yml) requires a bump. If the release for this
+# version already exists, the run skips with a warning.
+on:
+  push:
+    branches: [main]
+    # Same filter as the PR version check: development-only files don't ship.
+    paths:
+      - "extension/**"
+      - "!extension/tests/**"
+      - "!extension/README.md"
+      - "!extension/package.json"
+  workflow_dispatch:
+
+# Write access applies only to this workflow's token: it creates
+# extension-v* tags and their releases. Other workflows stay read-only.
+permissions:
+  contents: write
+
+concurrency:
+  group: extension-release
+  cancel-in-progress: false # releases are processed one at a time, in order
+
+jobs:
+  release:
+    name: Package and release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # history and tags, for the release notes
+
+      - name: Read version from manifest.json
+        id: meta
+        run: |
+          version=$(jq -er '.version' extension/manifest.json)
+          # Same rules as the PR check (Chrome: 1-4 integers, 0-65535, no
+          # leading zeros); comparing with itself only validates the format.
+          .github/scripts/extension-version-check.sh "$version" 0 >/dev/null
+          {
+            echo "version=$version"
+            echo "zip=tts-study-assistant-extension-v${version}.zip"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Plan release
+        id: plan
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          .github/scripts/extension-release-plan.sh "$VERSION" release-notes.md | tee -a "$GITHUB_OUTPUT"
+          cat release-notes.md
+          if grep -qx 'action=skip' "$GITHUB_OUTPUT"; then
+            echo "::warning file=extension/manifest.json::Release extension-v${VERSION} already exists; bump \"version\" in extension/manifest.json to publish these changes."
+          fi
+
+      - name: Create zip
+        if: steps.plan.outputs.action != 'skip'
+        working-directory: extension
+        env:
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          # manifest.json at the zip root (Chrome Web Store layout);
+          # development-only files are left out.
+          zip -r -X "../${ZIP}" . \
+            -x 'tests/*' 'package.json' 'package-lock.json' 'README.md' \
+               'node_modules/*' '*.DS_Store' '.*'
+          unzip -l "../${ZIP}"
+          unzip -p "../${ZIP}" manifest.json | jq -e '.manifest_version == 3' > /dev/null
+
+      - name: Create release
+        if: steps.plan.outputs.action == 'create'
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          gh release create "$TAG" "$ZIP" \
+            --target "$GITHUB_SHA" \
+            --title "Extension v${VERSION}" \
+            --notes-file release-notes.md
+
+      - name: Summary
+        env:
+          ACTION: ${{ steps.plan.outputs.action }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          {
+            echo "### Extension release: ${ACTION}"
+            echo ""
+            case "$ACTION" in
+              create) echo "Created release \`${TAG}\` with \`${ZIP}\`." ;;
+              skip)   echo "\`${TAG}\` already exists; bump the version in \`extension/manifest.json\` to publish a new release." ;;
+            esac
+            echo ""
+            echo "[Releases](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases)"
+          } >> "$GITHUB_STEP_SUMMARY"
