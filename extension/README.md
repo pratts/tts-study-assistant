@@ -54,6 +54,29 @@ The client follows `backend/openapi.json`:
 
 The engine lives in the service worker. If Chrome stops the worker, the player state resets.
 
+## Releasing
+
+Releases are manual: merging to `main` publishes nothing.
+
+1. **Bump the version** in `manifest.json` (and `package.json`) in your PR: patch for fixes, minor for features. The **Extension version bumped** check fails a PR that changes shipped files without raising the version above `main` and the latest release. The Chrome Web Store rejects same-version uploads.
+2. **Merge the PR.**
+3. **Tag the merge commit on `main` and push the tag:**
+   ```sh
+   git checkout main && git pull
+   git tag -s extension-v0.2.1 -m "Extension v0.2.1"   # must equal manifest.json's version
+   git push origin extension-v0.2.1
+   ```
+4. **The *Extension release* workflow** then:
+   - checks that the tag matches `manifest.json` at that commit and that the commit is on `main`;
+   - builds `tts-study-assistant-extension-v0.2.1.zip` (runtime files only, `manifest.json` at the root);
+   - creates the GitHub Release "Extension v0.2.1", with notes listing the `extension/` commits since the previous tag.
+5. **Upload the zip** to the Chrome Web Store, or install it unpacked.
+
+**Wrong tag?** If the workflow fails because the tag doesn't match the manifest, delete the tag and push a corrected one:
+```sh
+git push origin :refs/tags/extension-v0.2.1 && git tag -d extension-v0.2.1
+```
+
 ## Tests
 
 ```sh

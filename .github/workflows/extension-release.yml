@@ -1,31 +1,27 @@
 name: Extension release
 
-# When a change to the shipped extension reaches main (a merged PR is a push
-# to main), packages it and publishes a GitHub Release tagged
-# extension-v<version> with the zip attached and notes listing only
-# extension/ changes. Every release is a new version: the Chrome Web Store
-# rejects re-uploads of a published version, and the PR check
-# (extension-version-check.yml) requires a bump. If the release for this
-# version already exists, the run skips with a warning.
+# Publishes the Chrome extension when a maintainer pushes a version tag:
+#
+#   git tag -s extension-v0.2.1 -m "Extension v0.2.1"
+#   git push origin extension-v0.2.1
+#
+# Checks that the tag matches extension/manifest.json at the tagged commit and
+# that the commit is on main, then attaches
+# tts-study-assistant-extension-v<version>.zip to a GitHub Release whose notes
+# list only extension/ changes since the previous extension-v* tag.
+# Merging to main releases nothing.
 on:
   push:
-    branches: [main]
-    # Same filter as the PR version check: development-only files don't ship.
-    paths:
-      - "extension/**"
-      - "!extension/tests/**"
-      - "!extension/README.md"
-      - "!extension/package.json"
-  workflow_dispatch:
+    tags: ["extension-v*"]
 
-# Write access applies only to this workflow's token: it creates
-# extension-v* tags and their releases. Other workflows stay read-only.
+# Write access applies only to this workflow's token: it creates the release
+# for the pushed tag. Other workflows stay read-only.
 permissions:
   contents: write
 
 concurrency:
   group: extension-release
-  cancel-in-progress: false # releases are processed one at a time, in order
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -33,36 +29,48 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # history and tags, for the release notes
+          fetch-depth: 0 # main and all tags, for the checks and the notes
 
-      - name: Read version from manifest.json
+      - name: Check tag, version and branch
         id: meta
         run: |
-          version=$(jq -er '.version' extension/manifest.json)
-          # Same rules as the PR check (Chrome: 1-4 integers, 0-65535, no
-          # leading zeros); comparing with itself only validates the format.
-          .github/scripts/extension-version-check.sh "$version" 0 >/dev/null
+          version="${TAG#extension-v}"
+          # Chrome's version rules (1-4 integers, 0-65535, no leading zeros).
+          if ! .github/scripts/extension-version-check.sh "$version" 0 > /dev/null; then
+            echo "::error::Tag $TAG does not contain a valid Chrome version" && exit 1
+          fi
+          manifest=$(jq -er '.version' extension/manifest.json)
+          if [[ "$manifest" != "$version" ]]; then
+            echo "::error file=extension/manifest.json::Tag $TAG does not match manifest.json version $manifest at this commit. Delete the tag, bump the manifest (or fix the tag) and tag again."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag $TAG points to ${GITHUB_SHA::7}, which is not on main. Tag a commit that has been merged to main."
+            exit 1
+          fi
+          exists=false
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            exists=true
+            echo "::notice::Release $TAG already exists; nothing to do."
+          fi
           {
             echo "version=$version"
             echo "zip=tts-study-assistant-extension-v${version}.zip"
+            echo "exists=$exists"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Plan release
-        id: plan
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
+      - name: Write release notes
+        if: steps.meta.outputs.exists == 'false'
         run: |
-          .github/scripts/extension-release-plan.sh "$VERSION" release-notes.md | tee -a "$GITHUB_OUTPUT"
+          .github/scripts/extension-release-notes.sh "$TAG" release-notes.md
           cat release-notes.md
-          if grep -qx 'action=skip' "$GITHUB_OUTPUT"; then
-            echo "::warning file=extension/manifest.json::Release extension-v${VERSION} already exists; bump \"version\" in extension/manifest.json to publish these changes."
-          fi
 
       - name: Create zip
-        if: steps.plan.outputs.action != 'skip'
+        if: steps.meta.outputs.exists == 'false'
         working-directory: extension
         env:
           ZIP: ${{ steps.meta.outputs.zip }}
@@ -76,30 +84,29 @@ jobs:
           unzip -p "../${ZIP}" manifest.json | jq -e '.manifest_version == 3' > /dev/null
 
       - name: Create release
-        if: steps.plan.outputs.action == 'create'
+        if: steps.meta.outputs.exists == 'false'
         env:
-          TAG: ${{ steps.plan.outputs.tag }}
           VERSION: ${{ steps.meta.outputs.version }}
           ZIP: ${{ steps.meta.outputs.zip }}
         run: |
           gh release create "$TAG" "$ZIP" \
-            --target "$GITHUB_SHA" \
+            --verify-tag \
             --title "Extension v${VERSION}" \
             --notes-file release-notes.md
 
       - name: Summary
         env:
-          ACTION: ${{ steps.plan.outputs.action }}
-          TAG: ${{ steps.plan.outputs.tag }}
+          EXISTS: ${{ steps.meta.outputs.exists }}
           ZIP: ${{ steps.meta.outputs.zip }}
         run: |
           {
-            echo "### Extension release: ${ACTION}"
+            echo "### Extension release ${TAG}"
             echo ""
-            case "$ACTION" in
-              create) echo "Created release \`${TAG}\` with \`${ZIP}\`." ;;
-              skip)   echo "\`${TAG}\` already exists; bump the version in \`extension/manifest.json\` to publish a new release." ;;
-            esac
+            if [[ "$EXISTS" == "true" ]]; then
+              echo "The release already existed; nothing was changed."
+            else
+              echo "Created release \`${TAG}\` with \`${ZIP}\` from \`${GITHUB_SHA::7}\`."
+            fi
             echo ""
             echo "[Releases](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases)"
           } >> "$GITHUB_STEP_SUMMARY"
