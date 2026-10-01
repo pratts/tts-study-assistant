@@ -59,7 +59,7 @@ jobs:
           fi
           {
             echo "version=$version"
-            echo "zip=tts-study-assistant-extension-v${version}.zip"
+            echo "archive=tts-study-assistant-extension-v${version}.zip"
             echo "exists=$exists"
           } >> "$GITHUB_OUTPUT"
 
@@ -73,23 +73,26 @@ jobs:
         if: steps.meta.outputs.exists == 'false'
         working-directory: extension
         env:
-          ZIP: ${{ steps.meta.outputs.zip }}
+          ARCHIVE: ${{ steps.meta.outputs.archive }}
         run: |
+          # Info-ZIP reads the ZIP and ZIPOPT environment variables as extra
+          # options, which once turned the archive name into an input file.
+          unset ZIP ZIPOPT
           # manifest.json at the zip root (Chrome Web Store layout);
           # development-only files are left out.
-          zip -r -X "../${ZIP}" . \
+          zip -r -X "../${ARCHIVE}" . \
             -x 'tests/*' 'package.json' 'package-lock.json' 'README.md' \
                'node_modules/*' '*.DS_Store' '.*'
-          unzip -l "../${ZIP}"
-          unzip -p "../${ZIP}" manifest.json | jq -e '.manifest_version == 3' > /dev/null
+          unzip -l "../${ARCHIVE}"
+          unzip -p "../${ARCHIVE}" manifest.json | jq -e '.manifest_version == 3' > /dev/null
 
       - name: Create release
         if: steps.meta.outputs.exists == 'false'
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          ZIP: ${{ steps.meta.outputs.zip }}
+          ARCHIVE: ${{ steps.meta.outputs.archive }}
         run: |
-          gh release create "$TAG" "$ZIP" \
+          gh release create "$TAG" "$ARCHIVE" \
             --verify-tag \
             --title "Extension v${VERSION}" \
             --notes-file release-notes.md
@@ -97,7 +100,7 @@ jobs:
       - name: Summary
         env:
           EXISTS: ${{ steps.meta.outputs.exists }}
-          ZIP: ${{ steps.meta.outputs.zip }}
+          ARCHIVE: ${{ steps.meta.outputs.archive }}
         run: |
           {
             echo "### Extension release ${TAG}"
@@ -105,7 +108,7 @@ jobs:
             if [[ "$EXISTS" == "true" ]]; then
               echo "The release already existed; nothing was changed."
             else
-              echo "Created release \`${TAG}\` with \`${ZIP}\` from \`${GITHUB_SHA::7}\`."
+              echo "Created release \`${TAG}\` with \`${ARCHIVE}\` from \`${GITHUB_SHA::7}\`."
             fi
             echo ""
             echo "[Releases](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases)"
