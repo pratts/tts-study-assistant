@@ -1,0 +1,107 @@
+name: Extension CI
+
+# Runs on every PR so the required "Extension CI passed" check always
+# reports:
+#   - Unit tests (node:test) when anything in extension/ changes.
+#   - Version check when shipped files change: "version" in
+#     extension/manifest.json must be higher than main's and the latest
+#     extension-v* release (the Chrome Web Store only accepts higher
+#     versions). Development-only files (tests/, README.md, package.json)
+#     don't ship, so changing only those needs no bump.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths: ["extension/**", ".github/workflows/extension-ci.yml", ".github/scripts/extension-*.sh"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extension-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect extension changes
+    runs-on: ubuntu-latest
+    outputs:
+      extension: ${{ steps.filter.outputs.extension }}
+      shipped: ${{ steps.filter.outputs.shipped }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2 # the PR merge commit and its base parent
+      - id: filter
+        name: Diff against base
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            # Pushes and manual runs: test everything; no PR to version-check.
+            echo "extension=true" >> "$GITHUB_OUTPUT"
+            echo "shipped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          if grep -qE '^(extension/|\.github/workflows/extension-ci\.yml$|\.github/scripts/extension-)' <<< "$changed"; then
+            echo "extension=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "extension=false" >> "$GITHUB_OUTPUT"
+            echo "No extension changes: tests and version check skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if grep -E '^extension/' <<< "$changed" | grep -qvE '^extension/(tests/|README\.md$|package\.json$)'; then
+            echo "shipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "shipped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Extension unit tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.extension == 'true'
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: node:test (no dependencies)
+        run: npm test
+
+  version:
+    name: Extension version bumped
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.shipped == 'true'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # base branch and release tags
+      - name: Compare versions
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          new=$(jq -er '.version' extension/manifest.json)
+          base=$(git show "origin/${BASE_REF}:extension/manifest.json" | jq -er '.version')
+          released=$(git tag -l 'extension-v*' --sort=-v:refname | head -n 1 | sed 's/^extension-v//')
+          echo "PR: $new | ${BASE_REF}: $base | latest release: ${released:-none}"
+          .github/scripts/extension-version-check.sh "$new" "$base" "$released"
+
+  # Single status required on main. Skipped jobs count as passing; failed or
+  # cancelled ones, including change detection, fail.
+  ci-passed:
+    name: Extension CI passed
+    runs-on: ubuntu-latest
+    needs: [changes, test, version]
+    if: always()
+    steps:
+      - name: Check job results
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more extension checks failed"; exit 1
+          fi
