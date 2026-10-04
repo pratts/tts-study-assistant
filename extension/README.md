@@ -2,7 +2,11 @@
 
 Save text from any page as a note, listen to it, and get AI summaries. Plain Manifest V3 (vanilla JS modules, no build step), backed by the Go API in [`../backend`](../backend) and linking to the web dashboard in [`../frontend`](../frontend).
 
-## Install (unpacked)
+## Install from the Chrome Web Store
+
+**[TTS Study Assistant on the Chrome Web Store](https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp)**: click *Add to Chrome*. Installed copies update automatically when a new version is published.
+
+## Install unpacked (development)
 
 1. Open `chrome://extensions`, enable **Developer mode**.
 2. **Load unpacked** → select this `extension/` folder.
