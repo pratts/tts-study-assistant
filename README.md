@@ -2,6 +2,10 @@
 
 A productivity tool for saving, organizing, and listening to notes from any website: a Chrome extension for quick capture and playback, a web dashboard, and a Go API.
 
+[![Chrome Web Store version](https://img.shields.io/chrome-web-store/v/lpnchhblldgnnjgmkbmanggilffhbnnp?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp)
+
+**[Install the extension from the Chrome Web Store](https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp)** · [Open the web dashboard](https://tts-study-assistant.vercel.app)
+
 ## Screenshots
 
 ![Study Assistant popup playing a saved note on a Wikipedia page, with the progress bar, speed control and notes from this site](docs/screenshots/05-player-and-notes.png)
