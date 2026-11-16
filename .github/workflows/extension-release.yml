@@ -71,20 +71,15 @@ jobs:
 
       - name: Create zip
         if: steps.meta.outputs.exists == 'false'
-        working-directory: extension
         env:
           ARCHIVE: ${{ steps.meta.outputs.archive }}
         run: |
-          # Info-ZIP reads the ZIP and ZIPOPT environment variables as extra
-          # options, which once turned the archive name into an input file.
-          unset ZIP ZIPOPT
-          # manifest.json at the zip root (Chrome Web Store layout);
-          # development-only files are left out.
-          zip -r -X "../${ARCHIVE}" . \
-            -x 'tests/*' 'package.json' 'package-lock.json' 'README.md' \
-               'node_modules/*' '*.DS_Store' '.*'
-          unzip -l "../${ARCHIVE}"
-          unzip -p "../${ARCHIVE}" manifest.json | jq -e '.manifest_version == 3' > /dev/null
+          # The same build and package check as Extension CI.
+          .github/scripts/extension-package.sh "$ARCHIVE"
+          unzip -l "$ARCHIVE"
+          mkdir "$RUNNER_TEMP/package"
+          unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/package"
+          node .github/scripts/extension-checks.mjs package "$RUNNER_TEMP/package"
 
       - name: Create release
         if: steps.meta.outputs.exists == 'false'

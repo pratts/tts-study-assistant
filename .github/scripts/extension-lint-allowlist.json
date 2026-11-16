@@ -1,0 +1,19 @@
+[
+    {
+        "code": "MANIFEST_PERMISSIONS",
+        "file": "manifest.json",
+        "contains": "\"tts\"",
+        "reason": "Chrome needs the tts permission for chrome.tts; Firefox doesn't know it and uses the Web Speech API instead (#44)."
+    },
+    {
+        "code": "BACKGROUND_SERVICE_WORKER_IGNORED",
+        "file": "manifest.json",
+        "reason": "Chrome runs background.service_worker; Firefox ignores it and runs the same file from background.scripts (#43)."
+    },
+    {
+        "code": "KEY_FIREFOX_ANDROID_UNSUPPORTED_BY_MIN_VERSION",
+        "file": "manifest.json",
+        "contains": "data_collection_permissions",
+        "reason": "data_collection_permissions needs Firefox for Android 142, while the desktop minimum is 140 (#43). Android support is decided with the AMO submission (#52); remove this entry then, by adding gecko_android.strict_min_version 142.0 or dropping Android."
+    }
+]

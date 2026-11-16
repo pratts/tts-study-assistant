@@ -3,6 +3,11 @@ name: Extension CI
 # Runs on every PR so the required "Extension CI passed" check always
 # reports:
 #   - Unit tests (node:test) when anything in extension/ changes.
+#   - Package and Firefox lint, on the same changes: builds the release zip
+#     (.github/scripts/extension-package.sh), checks it has what Chrome and
+#     Firefox need and no development files, and runs Mozilla's add-on
+#     linter (web-ext lint) on it. Lint errors fail; warnings fail unless
+#     listed with a reason in .github/scripts/extension-lint-allowlist.json.
 #   - Version check when shipped files change: "version" in
 #     extension/manifest.json must be higher than main's and the latest
 #     extension-v* release (the Chrome Web Store only accepts higher
@@ -73,6 +78,53 @@ jobs:
       - name: node:test (no dependencies)
         run: npm test
 
+  package:
+    name: Extension package and Firefox lint
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.extension == 'true'
+    env:
+      # Pinned for reproducible lint results. To update: bump this, run the
+      # job, and adjust extension-lint-allowlist.json for new or removed
+      # warnings (https://github.com/mozilla/web-ext/releases).
+      WEB_EXT_VERSION: 10.8.0
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Test the check scripts
+        run: node --test .github/scripts/*.test.mjs
+      - name: Build the release zip
+        run: |
+          .github/scripts/extension-package.sh "$RUNNER_TEMP/extension.zip"
+          mkdir "$RUNNER_TEMP/package"
+          unzip -q "$RUNNER_TEMP/extension.zip" -d "$RUNNER_TEMP/package"
+      - name: Check the package
+        run: node .github/scripts/extension-checks.mjs package "$RUNNER_TEMP/package"
+      - name: web-ext lint
+        run: |
+          set -o pipefail # the check's exit code, not tee's
+          # web-ext exits non-zero on lint errors; the check below reports them.
+          npx --yes "web-ext@${WEB_EXT_VERSION}" lint \
+            --source-dir "$RUNNER_TEMP/package" --output json > "$RUNNER_TEMP/lint.json" || true
+          node .github/scripts/extension-checks.mjs lint "$RUNNER_TEMP/lint.json" .github/scripts/extension-lint-allowlist.json \
+            | tee "$RUNNER_TEMP/lint.txt"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Extension package and Firefox lint (web-ext ${WEB_EXT_VERSION})"
+            echo ""
+            if [ -f "$RUNNER_TEMP/lint.txt" ]; then
+              echo '```'
+              sed 's/^::[a-z]*:://' "$RUNNER_TEMP/lint.txt"
+              echo '```'
+            else
+              echo "Lint did not run; see the failed step."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   version:
     name: Extension version bumped
     runs-on: ubuntu-latest
@@ -97,7 +149,7 @@ jobs:
   ci-passed:
     name: Extension CI passed
     runs-on: ubuntu-latest
-    needs: [changes, test, version]
+    needs: [changes, test, package, version]
     if: always()
     steps:
       - name: Check job results
