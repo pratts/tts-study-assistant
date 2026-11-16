@@ -4,11 +4,17 @@ console.log('TTS Study Assistant - Background service worker loaded');
 import { ApiClient, SUMMARY_UNAVAILABLE } from './js/api-client.js';
 import { errorMessage } from './js/errors.js';
 import { TtsEngine } from './js/tts-engine.js';
+import { pickTts } from './js/tts-webspeech.js';
 
 const apiClient = new ApiClient();
 
 const engine = new TtsEngine({
-    tts: chrome.tts,
+    // chrome.tts in Chrome; Firefox has no chrome.tts, so the Web Speech API.
+    tts: pickTts({
+        chromeTts: chrome.tts,
+        synth: globalThis.speechSynthesis,
+        Utterance: globalThis.SpeechSynthesisUtterance,
+    }),
     getSettings: async () => (await chrome.storage.sync.get('settings')).settings || {},
     onChange: (state) => {
         // The popup may be closed; nobody is listening then.
@@ -271,30 +277,22 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             break;
 
         case 'play-text':
+            // Play here, not through the tab's content script: that round trip
+            // fails silently where no content script runs (tabs open before the
+            // extension was installed or reloaded in Chrome, browser pages, PDFs).
+            engine.play(info.selectionText);
             // Auto-save when playing
             try {
-                const isAuthenticated = await ApiClient.isAuthenticated();
-                if (isAuthenticated) {
+                if (await ApiClient.isAuthenticated()) {
                     await apiClient.createNote({
                         content: info.selectionText,
-                        source_url: tab.url,
-                        source_title: tab.title
+                        source_url: tab?.url,
+                        source_title: tab?.title
                     });
                     updateNoteBadge();
                 }
             } catch (error) {
                 console.error('Failed to save note:', error);
-            }
-
-            if (typeof tab.id === 'number' && tab.id >= 0) {
-                // Send text to content script to play
-                chrome.tabs.sendMessage(tab.id, {
-                    action: 'playText',
-                    text: info.selectionText
-                });
-            } else {
-                console.warn('Cannot send message: invalid tab id', tab);
-                // Optionally, show a notification or fallback here
             }
             break;
 

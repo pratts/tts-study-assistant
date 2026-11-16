@@ -14,7 +14,7 @@ Save text from any page as a note, listen to it, and get AI summaries. Plain Man
 
 ### Firefox (in progress)
 
-Firefox support is tracked in the [Firefox release (AMO) milestone](https://github.com/pratts/tts-study-assistant/milestone/1). Playback doesn't work in Firefox yet (#44).
+Firefox support is tracked in the [Firefox release (AMO) milestone](https://github.com/pratts/tts-study-assistant/milestone/1).
 
 ```sh
 cd extension
@@ -29,6 +29,7 @@ One `manifest.json` serves both browsers:
 - **Background:** Chrome uses `background.service_worker`; Firefox doesn't support extension service workers and uses `background.scripts` (an event page) with the same file. Chrome 121+ ignores `scripts`, hence `minimum_chrome_version: 121`.
 - **`browser_specific_settings.gecko`:** the add-on ID (permanent once uploaded to addons.mozilla.org), the minimum Firefox version (140, the first with `data_collection_permissions`) and the data the extension sends to the backend. Chrome ignores this key.
 - **Expected lint warnings:** Firefox doesn't know the `tts` permission and ignores `background.service_worker`.
+- **Expected Chrome warning:** `chrome://extensions` shows "'background.scripts' requires manifest version of 2 or lower". Chrome ignores the key and runs the service worker; it's the price of one manifest for both browsers. If the Chrome Web Store ever rejects it, the release can write a manifest per browser instead (#50).
 
 ## Configuration
 
@@ -66,15 +67,15 @@ The client follows `backend/openapi.json`:
 
 ## Playback progress
 
-`chrome.tts` does not report durations.
+Speech uses `chrome.tts` in Chrome. Firefox has no `chrome.tts`, so there `js/tts-webspeech.js` wraps the Web Speech API (`speechSynthesis`) in the same interface; `TtsEngine` drives either one. Neither reports durations.
 
 - The total starts as an estimate: about 14 characters per second × speed.
 - After 1.5 seconds of speech, it is re-derived from word-boundary events.
-- So it can shift slightly at first, and stays an estimate for voices that don't emit word events.
+- So it can shift slightly at first, and stays an estimate for voices that don't emit word events (in Firefox this depends on the voice and OS).
 - Seeking restarts speech at the start of the word nearest the chosen position.
 - Changing the speed while playing continues from the current word at the new speed.
 
-The engine lives in the service worker. If Chrome stops the worker, the player state resets.
+The engine lives in the background: Chrome's service worker, or Firefox's event page. If the browser stops it, the player state resets.
 
 ## Releasing
 
@@ -103,7 +104,7 @@ git push origin :refs/tags/extension-v0.2.1 && git tag -d extension-v0.2.1
 
 ```sh
 cd extension
-npm test        # node:test, no dependencies: utils, the playback engine and the manifest
+npm test        # node:test, no dependencies: utils, the playback engine (chrome.tts and Web Speech) and the manifest
 ```
 
 ## Manual check
