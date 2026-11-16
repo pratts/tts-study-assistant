@@ -18,8 +18,8 @@ Firefox support is tracked in the [Firefox release (AMO) milestone](https://gith
 
 ```sh
 cd extension
-npx web-ext run --ignore-files tests package.json README.md   # opens Firefox with the extension loaded
-npx web-ext lint --ignore-files tests package.json README.md  # Firefox's add-on checks
+npx web-ext@10.8.0 run --ignore-files tests package.json README.md   # opens Firefox with the extension loaded
+npx web-ext@10.8.0 lint --ignore-files tests package.json README.md  # Mozilla's add-on linter (CI runs it on the release zip)
 ```
 
 Or open `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → select `manifest.json`.
@@ -28,7 +28,7 @@ One `manifest.json` serves both browsers:
 
 - **Background:** Chrome uses `background.service_worker`; Firefox doesn't support extension service workers and uses `background.scripts` (an event page) with the same file. Chrome 121+ ignores `scripts`, hence `minimum_chrome_version: 121`.
 - **`browser_specific_settings.gecko`:** the add-on ID (permanent once uploaded to addons.mozilla.org), the minimum Firefox version (140, the first with `data_collection_permissions`) and the data the extension sends to the backend. Chrome ignores this key.
-- **Expected lint warnings:** Firefox doesn't know the `tts` permission and ignores `background.service_worker`.
+- **Expected lint warnings:** Firefox doesn't know the `tts` permission and ignores `background.service_worker`; `data_collection_permissions` needs Firefox for Android 142 (Android support is decided in #52). They're listed, with reasons, in [`.github/scripts/extension-lint-allowlist.json`](../.github/scripts/extension-lint-allowlist.json).
 - **Expected Chrome warning:** `chrome://extensions` shows "'background.scripts' requires manifest version of 2 or lower". Chrome ignores the key and runs the service worker; it's the price of one manifest for both browsers. If the Chrome Web Store ever rejects it, the release can write a manifest per browser instead (#50).
 
 ## Configuration
@@ -91,7 +91,7 @@ Releases are manual: merging to `main` publishes nothing.
    ```
 4. **The *Extension release* workflow** then:
    - checks that the tag matches `manifest.json` at that commit and that the commit is on `main`;
-   - builds `tts-study-assistant-extension-v0.2.1.zip` (runtime files only, `manifest.json` at the root);
+   - builds `tts-study-assistant-extension-v0.2.1.zip` with `.github/scripts/extension-package.sh` (runtime files only, `manifest.json` at the root) and runs the same package check as Extension CI;
    - creates the GitHub Release "Extension v0.2.1", with notes listing the `extension/` commits since the previous tag.
 5. **Upload the zip** to the Chrome Web Store, or install it unpacked.
 
@@ -106,6 +106,20 @@ git push origin :refs/tags/extension-v0.2.1 && git tag -d extension-v0.2.1
 cd extension
 npm test        # node:test, no dependencies: utils, the playback engine (chrome.tts and Web Speech) and the manifest
 ```
+
+The **Extension package and Firefox lint** CI job checks what actually ships. Run it locally from the repo root:
+
+```sh
+.github/scripts/extension-package.sh /tmp/ext.zip && rm -rf /tmp/ext && unzip -q /tmp/ext.zip -d /tmp/ext
+node .github/scripts/extension-checks.mjs package /tmp/ext   # manifest at the root, both browsers' keys, no dev files, every referenced file present
+npx web-ext@10.8.0 lint --source-dir /tmp/ext --output json > /tmp/lint.json
+node .github/scripts/extension-checks.mjs lint /tmp/lint.json .github/scripts/extension-lint-allowlist.json
+node --test .github/scripts/*.test.mjs                        # tests for the checks themselves
+```
+
+- **Lint errors** fail the job.
+- **Warnings** fail unless the allowlist has a matching entry with a `reason`. Fix the warning when you can; allowlist it only when it's an intended difference between the browsers.
+- **Allowlist entries** that no longer match any warning are flagged, so the list shrinks when a warning is fixed.
 
 ## Manual check
 
