@@ -4,11 +4,17 @@ console.log('TTS Study Assistant - Background service worker loaded');
 import { ApiClient, SUMMARY_UNAVAILABLE } from './js/api-client.js';
 import { errorMessage } from './js/errors.js';
 import { TtsEngine } from './js/tts-engine.js';
+import { pickTts } from './js/tts-webspeech.js';
 
 const apiClient = new ApiClient();
 
 const engine = new TtsEngine({
-    tts: chrome.tts,
+    // chrome.tts in Chrome; Firefox has no chrome.tts, so the Web Speech API.
+    tts: pickTts({
+        chromeTts: chrome.tts,
+        synth: globalThis.speechSynthesis,
+        Utterance: globalThis.SpeechSynthesisUtterance,
+    }),
     getSettings: async () => (await chrome.storage.sync.get('settings')).settings || {},
     onChange: (state) => {
         // The popup may be closed; nobody is listening then.

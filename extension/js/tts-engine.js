@@ -1,7 +1,8 @@
 // Text-to-speech playback with progress, pause/resume, stop and seek, on top
-// of chrome.tts (injected, so it can be tested without Chrome).
+// of a chrome.tts-shaped backend (injected, so it can be tested without a
+// browser): chrome.tts in Chrome, js/tts-webspeech.js in Firefox.
 //
-// chrome.tts never reports a duration. The total starts as an estimate from
+// Neither reports a duration. The total starts as an estimate from
 // text length and rate (CHARS_PER_SECOND), then, once word-boundary events
 // arrive, is re-derived from the measured speed. So it is approximate for the
 // first second or two, and stays an estimate for voices without word events.
