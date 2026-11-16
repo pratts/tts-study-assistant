@@ -12,6 +12,24 @@ Save text from any page as a note, listen to it, and get AI summaries. Plain Man
 2. **Load unpacked** → select this `extension/` folder.
 3. After changing files, press the reload icon on the extension card (and reopen the popup).
 
+### Firefox (in progress)
+
+Firefox support is tracked in the [Firefox release (AMO) milestone](https://github.com/pratts/tts-study-assistant/milestone/1). Playback doesn't work in Firefox yet (#44).
+
+```sh
+cd extension
+npx web-ext run --ignore-files tests package.json README.md   # opens Firefox with the extension loaded
+npx web-ext lint --ignore-files tests package.json README.md  # Firefox's add-on checks
+```
+
+Or open `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → select `manifest.json`.
+
+One `manifest.json` serves both browsers:
+
+- **Background:** Chrome uses `background.service_worker`; Firefox doesn't support extension service workers and uses `background.scripts` (an event page) with the same file. Chrome 121+ ignores `scripts`, hence `minimum_chrome_version: 121`.
+- **`browser_specific_settings.gecko`:** the add-on ID (permanent once uploaded to addons.mozilla.org), the minimum Firefox version (140, the first with `data_collection_permissions`) and the data the extension sends to the backend. Chrome ignores this key.
+- **Expected lint warnings:** Firefox doesn't know the `tts` permission and ignores `background.service_worker`.
+
 ## Configuration
 
 `js/config.js`:
@@ -85,7 +103,7 @@ git push origin :refs/tags/extension-v0.2.1 && git tag -d extension-v0.2.1
 
 ```sh
 cd extension
-npm test        # node:test, no dependencies: utils and the playback engine
+npm test        # node:test, no dependencies: utils, the playback engine and the manifest
 ```
 
 ## Manual check
