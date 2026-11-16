@@ -29,6 +29,7 @@ One `manifest.json` serves both browsers:
 - **Background:** Chrome uses `background.service_worker`; Firefox doesn't support extension service workers and uses `background.scripts` (an event page) with the same file. Chrome 121+ ignores `scripts`, hence `minimum_chrome_version: 121`.
 - **`browser_specific_settings.gecko`:** the add-on ID (permanent once uploaded to addons.mozilla.org), the minimum Firefox version (140, the first with `data_collection_permissions`) and the data the extension sends to the backend. Chrome ignores this key.
 - **Expected lint warnings:** Firefox doesn't know the `tts` permission and ignores `background.service_worker`.
+- **Expected Chrome warning:** `chrome://extensions` shows "'background.scripts' requires manifest version of 2 or lower". Chrome ignores the key and runs the service worker; it's the price of one manifest for both browsers. If the Chrome Web Store ever rejects it, the release can write a manifest per browser instead (#50).
 
 ## Configuration
 

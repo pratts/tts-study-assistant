@@ -175,14 +175,6 @@ function setupEventListeners() {
             sendResponse({ text: text });
             return true;
         }
-
-        if (request.action === 'playText') {
-            chrome.runtime.sendMessage({
-                action: 'speak',
-                text: request.text,
-                options: {}
-            });
-        }
     });
 
     // Storage change listener for settings
