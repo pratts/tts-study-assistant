@@ -1,6 +1,7 @@
 import { ApiClient, ApiError, SUMMARY_UNAVAILABLE } from '../js/api-client.js';
-import { DASHBOARD_URL } from '../js/config.js';
+import { API_URL, DASHBOARD_URL } from '../js/config.js';
 import { errorMessage } from '../js/errors.js';
+import { missingAccess, siteAccessText } from '../js/site-access.js';
 import { icon } from '../js/icons.js';
 import { displayDomain, formatTime, RATES, relativeDate, siteDomainFor, snapRate } from '../js/utils.js';
 
@@ -39,6 +40,7 @@ async function init() {
         if (item.dataset.path) item.append(externalHint());
     }
 
+    setupSiteAccess();
     setupSpeed();
     setupMenu();
     setupPlayer();
@@ -214,6 +216,40 @@ async function handleSessionEnded(error) {
     $('notes-section').classList.add('hidden');
     toast(error.message, 'warning');
     return true;
+}
+
+// ---------------------------------------------------------------- website access
+
+/**
+ * Shows a banner when the extension lacks access it needs here: the API host
+ * (login, notes) or the current site (selection button). It asks for exactly
+ * those origins, never all websites, so a user's "On specific sites" choice
+ * is kept. Granting makes the background add the content script to open tabs
+ * (permissions.onAdded).
+ */
+function setupSiteAccess() {
+    let missing = { origins: [] };
+    const render = async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        missing = await missingAccess(chrome.permissions, { apiUrl: API_URL, tabUrl: tab?.url });
+        $('site-access').classList.toggle('hidden', missing.origins.length === 0);
+        if (missing.origins.length) $('site-access-text').textContent = siteAccessText(missing);
+    };
+    $('site-access-btn').addEventListener('click', async () => {
+        // permissions.request must be the first call in the click handler:
+        // Firefox only shows the prompt for a user action, so the origins
+        // were worked out beforehand. Firefox may close the popup for the
+        // prompt; the background still gets onAdded.
+        try {
+            if (await chrome.permissions.request({ origins: missing.origins })) loadSiteNotes();
+        } catch (error) {
+            toast(errorMessage(error), 'warning');
+        }
+        render();
+    });
+    chrome.permissions.onAdded.addListener(render);
+    chrome.permissions.onRemoved.addListener(render);
+    render();
 }
 
 // ---------------------------------------------------------------- notes (3, 4, 6)

@@ -39,6 +39,12 @@
         </header>
 
         <main class="main">
+            <!-- Website access: shown when the selection button can't run on pages -->
+            <section id="site-access" class="card site-access hidden" aria-labelledby="site-access-text">
+                <p id="site-access-text" class="site-access-text"></p>
+                <button type="button" id="site-access-btn" class="btn-secondary">Allow</button>
+            </section>
+
             <!-- Playback: shown while a text is loaded -->
             <section id="player" class="card player hidden" aria-label="Playback">
                 <p id="now-playing" class="now-playing"></p>

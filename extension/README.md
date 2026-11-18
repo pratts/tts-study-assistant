@@ -40,7 +40,28 @@ One `manifest.json` serves both browsers:
 | `API_URL` | `https://tts-study-assistant-production.up.railway.app/api/v1` | `http://localhost:3000/api/v1` |
 | `DASHBOARD_URL` | `https://tts-study-assistant.vercel.app` | `http://localhost:5173` |
 
-The extension calls the API from its own pages and service worker, so `<all_urls>` host permission covers CORS; the backend's `CORS_ORIGINS` does not need an entry for the extension.
+The extension calls the API from its own pages and background. The API host is its own host permission, so requests with that access skip CORS and the backend's `CORS_ORIGINS` needs no entry for the extension (Firefox extension origins are random per install). Without that access, requests fail CORS, so the popup asks for it. If you point `API_URL` elsewhere, update that `host_permissions` entry too; `tests/manifest.test.mjs` checks they match.
+
+## Website access
+
+The selection button is a content script and needs access to the page's site; login and notes need access to the API host. Users can limit both: Chrome's "Site access: On click / On specific sites" withholds every host, including the API, and Firefox treats host permissions as optional (Add-ons → Permissions).
+
+- **Popup:** a banner shows what's missing on the current tab, the site, the API host or both, and **Allow** asks for exactly those origins, never all websites, so a user's "On specific sites" choice stays as it is.
+- **API without host access:** login and notes fail CORS until the user allows the API host from the banner.
+- **Content script in open tabs:** on install, update, or when access is granted, the background adds the content script to open web pages. Chrome otherwise only adds it to pages loaded afterwards. A page may receive it twice (Firefox injects on install too). `content.js` skips a page where a live copy already runs, and removes a copy orphaned by an extension reload.
+- **Shortcut and context menu:** they work without the content script and without website access. The shortcut reads the selection with `scripting.executeScript` under `activeTab`; *Play Text* plays from the background.
+- **Pages extensions can't script:** browser pages and add-on stores. The shortcut shows a notification there.
+
+| Permission | Why |
+|---|---|
+| `storage` | Settings and the login session |
+| `tts` | Speech in Chrome (Firefox uses the Web Speech API) |
+| `activeTab` | The current tab's URL and title for a note, and reading its selection from the shortcut |
+| `scripting` | Reading the selection, and adding the content script to open tabs |
+| `contextMenus` | Right-click → Study Assistant |
+| `notifications` | Saved, summary and error messages |
+| Host: the API | Login, notes and summaries without CORS, and when access to other sites is revoked |
+| Host: `<all_urls>` | The selection button on every page |
 
 ## Features
 
@@ -104,7 +125,7 @@ git push origin :refs/tags/extension-v0.2.1 && git tag -d extension-v0.2.1
 
 ```sh
 cd extension
-npm test        # node:test, no dependencies: utils, the playback engine (chrome.tts and Web Speech) and the manifest
+npm test        # node:test, no dependencies: utils, playback (chrome.tts and Web Speech), background, content script, website access, manifest
 ```
 
 The **Extension package and Firefox lint** CI job checks what actually ships. Run it locally from the repo root:
