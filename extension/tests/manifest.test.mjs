@@ -116,6 +116,30 @@ test('command shortcuts avoid Alt+S and never clash', () => {
     }
 });
 
+test('the privacy policy words every declared data category and permission', () => {
+    // AMO reviewers compare the policy with the manifest. The frontend test
+    // checks the rendered page; this catches a manifest change the policy misses.
+    const policy = readFileSync(new URL('../frontend/src/pages/privacy-policy.tsx', root), 'utf8');
+    const wording = {
+        websiteContent: 'text you select and save',
+        browsingActivity: 'address (URL) and title of the page',
+        authenticationInfo: 'Sessions: login tokens',
+        personallyIdentifyingInfo: 'your name, email address and password',
+        storage: 'storage',
+        tts: 'text-to-speech',
+        activeTab: 'active tab',
+        scripting: 'scripting',
+        contextMenus: 'context menus',
+        notifications: 'notifications',
+    };
+    const declared = manifest.browser_specific_settings.gecko.data_collection_permissions.required;
+    for (const key of [...declared, ...manifest.permissions]) {
+        assert.ok(wording[key], `add policy wording for ${key} here and in frontend/src/pages/privacy-policy.tsx`);
+        assert.ok(policy.includes(wording[key]), `privacy policy doesn't mention ${key} ("${wording[key]}")`);
+    }
+    assert.ok(policy.includes('Chrome and Firefox'), 'the policy covers both browsers');
+});
+
 test('manifest and package.json versions match', () => {
     assert.equal(manifest.version, pkg.version);
 });

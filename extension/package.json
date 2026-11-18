@@ -1,7 +1,7 @@
 {
   "name": "tts-study-assistant",
   "version": "0.3.4",
-  "description": "Instant text-to-speech Chrome extension with study features",
+  "description": "Instant text-to-speech browser extension for Chrome and Firefox, with study features",
   "scripts": {
     "test": "node --test tests/*.test.mjs"
   },
@@ -13,6 +13,8 @@
     "tts",
     "text-to-speech",
     "chrome-extension",
+    "firefox",
+    "firefox-addon",
     "study",
     "learning"
   ],
