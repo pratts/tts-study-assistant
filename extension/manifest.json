@@ -1,18 +1,19 @@
 {
     "manifest_version": 3,
     "name": "TTS Study Assistant",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "description": "Save and listen to text from any webpage",
     "minimum_chrome_version": "121",
     "permissions": [
         "storage",
         "tts",
         "activeTab",
+        "scripting",
         "contextMenus",
-        "notifications",
-        "tabs"
+        "notifications"
     ],
     "host_permissions": [
+        "https://tts-study-assistant-production.up.railway.app/*",
         "<all_urls>"
     ],
     "background": {

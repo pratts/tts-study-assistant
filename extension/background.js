@@ -5,6 +5,7 @@ import { ApiClient, SUMMARY_UNAVAILABLE } from './js/api-client.js';
 import { errorMessage } from './js/errors.js';
 import { TtsEngine } from './js/tts-engine.js';
 import { pickTts } from './js/tts-webspeech.js';
+import { injectIntoOpenTabs, readSelection, selectionErrorMessage } from './js/site-access.js';
 
 const apiClient = new ApiClient();
 
@@ -166,9 +167,18 @@ chrome.commands.onCommand.addListener(async (command) => {
     if (command !== 'save-selection') return;
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || typeof tab.id !== 'number') return;
+    let text;
     try {
-        const { text } = await chrome.tabs.sendMessage(tab.id, { action: 'getSelection' });
-        if (!text) return;
+        // Read with scripting, not the content script: the shortcut grants
+        // activeTab, so this also works in tabs without the content script.
+        text = await readSelection(chrome.scripting, tab.id);
+    } catch (error) {
+        console.error('Failed to read the selection:', error);
+        notify('Could not read the selection', selectionErrorMessage(error));
+        return;
+    }
+    if (!text) return;
+    try {
         if (!(await ApiClient.isAuthenticated())) {
             notify('Login Required', 'Please login to save notes. Click the extension icon.');
             return;
@@ -180,6 +190,23 @@ chrome.commands.onCommand.addListener(async (command) => {
         console.error('Failed to save selection:', error);
         notify('Could not save the note', errorMessage(error));
     }
+});
+
+// The selection button needs the content script in every tab. Chrome only
+// adds it to pages loaded after install or update, and neither browser adds
+// it when website access is granted later, so add it to open tabs then.
+async function addContentScriptToOpenTabs() {
+    const [{ js = [], css = [] } = {}] = chrome.runtime.getManifest().content_scripts ?? [];
+    const { injected, failed } = await injectIntoOpenTabs(chrome, { js, css });
+    console.log(`Content script added to ${injected} open tabs (${failed} could not be scripted)`);
+}
+
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+    if (reason === 'install' || reason === 'update') addContentScriptToOpenTabs();
+});
+
+chrome.permissions.onAdded.addListener(({ origins = [] }) => {
+    if (origins.length) addContentScriptToOpenTabs();
 });
 
 function notify(title, message) {
@@ -243,13 +270,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     switch (info.menuItemId) {
         case 'save-note':
-            const noteData = {
-                content: info.selectionText,
-                source_url: tab.url,
-                source_title: tab.title
-            };
-
             try {
+                const noteData = {
+                    content: info.selectionText,
+                    source_url: tab?.url,
+                    source_title: tab?.title
+                };
                 const isAuthenticated = await ApiClient.isAuthenticated();
                 if (!isAuthenticated) {
                     chrome.notifications.create({
@@ -273,6 +299,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 updateNoteBadge();
             } catch (error) {
                 console.error('Failed to save note:', error);
+                notify('Could not save the note', errorMessage(error));
             }
             break;
 

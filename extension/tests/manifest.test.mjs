@@ -82,6 +82,23 @@ test('every icon has the pixel size its manifest key declares', () => {
     }
 });
 
+test('permissions are the minimum the extension uses', () => {
+    // Every permission must be justified in the AMO reviewer notes (#52).
+    assert.deepEqual([...manifest.permissions].sort(), ['activeTab', 'contextMenus', 'notifications', 'scripting', 'storage', 'tts']);
+    // tab.url/title come from activeTab (popup, shortcut, context menu) or host access.
+    assert.ok(!manifest.permissions.includes('tabs'), 'tabs is not needed');
+});
+
+test('the backend host is a host permission of its own', () => {
+    // With access to the API host, requests skip CORS, and the popup can ask
+    // for it alone (with Chrome "On specific sites" it is withheld too).
+    const config = readFileSync(new URL('js/config.js', root), 'utf8');
+    const apiUrl = config.match(/^export const API_URL = '([^']+)'/m)?.[1];
+    assert.ok(apiUrl, 'API_URL not found in js/config.js');
+    assert.ok(manifest.host_permissions.includes(`${new URL(apiUrl).origin}/*`), `host_permissions must include ${new URL(apiUrl).origin}/*`);
+    assert.ok(manifest.host_permissions.includes('<all_urls>'), 'the selection button needs <all_urls>');
+});
+
 test('manifest and package.json versions match', () => {
     assert.equal(manifest.version, pkg.version);
 });

@@ -258,6 +258,24 @@ button {
     font-weight: 600;
 }
 
+/* ---------- Website access ---------- */
+.site-access {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-color: var(--warning);
+}
+
+.site-access-text {
+    margin: 0;
+    flex: 1;
+    font-size: 12px;
+}
+
+.site-access .btn-secondary {
+    flex-shrink: 0;
+}
+
 /* ---------- Player ---------- */
 .now-playing {
     margin: 0 0 8px;
