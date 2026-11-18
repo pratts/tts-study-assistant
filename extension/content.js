@@ -8,6 +8,7 @@
 // skips the page when a live copy runs, and removes an orphaned one.
 (() => {
     const INSTANCE_KEY = '__ttsStudyAssistant';
+    const MODAL_ID = 'tts-summary-modal';
     // This copy's own extension APIs: in a page shared with a newer copy,
     // the global `chrome` may already be the newer copy's.
     const runtime = chrome.runtime;
@@ -66,6 +67,7 @@
         }
         actionButton?.remove();
         actionButton = null;
+        document.getElementById(MODAL_ID)?.remove();
         if (globalThis[INSTANCE_KEY]?.teardown === teardown) delete globalThis[INSTANCE_KEY];
     }
 
@@ -168,25 +170,28 @@
     function showActionButton(x, y) {
         if (!actionButton || !isEnabled) return;
 
-        // Ensure button stays within viewport
-        const buttonWidth = 100;
+        // Ensure button stays within viewport. Measure it once shown (two
+        // buttons, about 170px); before layout, assume that width.
+        actionButton.classList.remove('hidden');
+        const buttonWidth = actionButton.offsetWidth || 170;
         const buttonHeight = 35;
 
         let left = x + 10;
         let top = y - buttonHeight - 5;
 
-        // Adjust if too close to edges
-        if (left + buttonWidth > window.innerWidth) {
-            left = window.innerWidth - buttonWidth - 10;
+        // Adjust if too close to the right edge (page coordinates).
+        const rightEdge = window.scrollX + window.innerWidth;
+        if (left + buttonWidth > rightEdge) {
+            left = Math.max(window.scrollX, rightEdge - buttonWidth - 10);
         }
 
-        if (top < 10) {
+        // Too close to the top of the visible page: show it below instead.
+        if (top < window.scrollY + 10) {
             top = y + 20;
         }
 
         actionButton.style.left = `${left}px`;
         actionButton.style.top = `${top}px`;
-        actionButton.classList.remove('hidden');
     }
 
     // Hide action button
@@ -250,7 +255,7 @@
                 const range = selection.getRangeAt(0);
                 const rect = range.getBoundingClientRect();
                 showActionButton(
-                    rect.left + rect.width / 2,
+                    rect.left + window.scrollX + rect.width / 2,
                     rect.top + window.scrollY
                 );
             }
@@ -280,31 +285,31 @@
 
     function showSummaryModal(summary, type = "success") {
         // Remove any existing modal
-        const existingModal = document.querySelector('.tts-summary-modal');
+        const existingModal = document.getElementById(MODAL_ID);
         if (existingModal) {
             existingModal.remove();
         }
 
         const modal = document.createElement('div');
-        modal.className = 'tts-summary-modal';
+        modal.id = MODAL_ID;
 
         const isUnavailable = type === "unavailable";
         const title = isUnavailable ? "Summary Unavailable" : "Summary";
-        const contentClass = isUnavailable ? "tts-summary-content unavailable" : "tts-summary-content";
+        const contentClass = isUnavailable ? 'tts-summary-content tts-summary-unavailable' : 'tts-summary-content';
 
         // Built with textContent: the summary is AI output derived from page text
         // and must never be parsed as HTML inside the page.
         const content = document.createElement('div');
         content.className = contentClass;
         const heading = document.createElement('h3');
+        heading.className = 'tts-summary-title';
         heading.textContent = title;
         const body = document.createElement('p');
+        body.className = 'tts-summary-text';
         body.textContent = summary;
         const actions = document.createElement('div');
-        actions.className = 'modal-actions';
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'tts-btn close-modal';
-        closeBtn.textContent = 'Close';
+        actions.className = 'tts-modal-actions';
+        const closeBtn = button('tts-close-modal', 'Close');
         actions.appendChild(closeBtn);
         content.append(heading, body, actions);
         modal.appendChild(content);

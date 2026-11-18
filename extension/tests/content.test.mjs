@@ -67,12 +67,14 @@ function fakePage() {
         referrer: '',
         createElement: (tag) => new FakeElement(tag),
         querySelector: () => null,
+        getElementById: (id) => body.children.find((c) => c.id === id) ?? null,
         addEventListener: (type, fn) => (docListeners[type] ??= new Set()).add(fn),
         removeEventListener: (type, fn) => docListeners[type]?.delete(fn),
     };
     let selection = '';
     const window = {
         innerWidth: 1000,
+        scrollX: 0,
         scrollY: 0,
         location: { href: 'https://example.com/' },
         getSelection: () => ({
@@ -92,7 +94,9 @@ function fakePage() {
     return {
         context,
         body,
+        window,
         buttons: () => body.children.filter((c) => c.id === 'tts-action-button'),
+        modals: () => body.children.filter((c) => c.id === 'tts-summary-modal'),
         listenerCount: (type) => docListeners[type]?.size ?? 0,
         select: (text) => (selection = text),
         fire: (type, event = { target: body }) => [...(docListeners[type] ?? [])].forEach((fn) => fn(event)),
@@ -100,9 +104,9 @@ function fakePage() {
 }
 
 /** A fresh extension context (what each injection's `chrome` would be). */
-function fakeChrome() {
+function fakeChrome(sendMessage = async () => ({ enabled: true })) {
     return {
-        runtime: { id: 'ext-id', sendMessage: async () => ({ enabled: true }) },
+        runtime: { id: 'ext-id', sendMessage },
         storage: { onChanged: fakeEvent() },
     };
 }
@@ -168,4 +172,71 @@ test('a live copy shows the button for a selection', async () => {
     const [button] = page.buttons();
     assert.ok(!button.classList.contains('hidden'));
     assert.equal(button.style.left, '135px');
+});
+
+/** All text in an element tree, and every class name used in it. */
+function walk(el, out = { text: [], classes: [] }) {
+    if (el.textContent) out.text.push(el.textContent);
+    out.classes.push(...el.className.split(' ').filter(Boolean));
+    el.children.forEach((c) => walk(c, out));
+    return out;
+}
+
+async function summarize(page, response) {
+    const chrome = fakeChrome(async (msg) => (msg.action === 'triggerSummarize' ? response : { enabled: true }));
+    await inject(page, chrome);
+    page.select('some selected text');
+    page.fire('mouseup');
+    const summarizeBtn = page.buttons()[0].children[1];
+    await summarizeBtn.listeners.click[0]({ stopPropagation() {} });
+}
+
+test('the summary modal shows backend text as text, never as HTML', async () => {
+    const page = fakePage();
+    const summary = '<img src=x onerror="alert(1)"> <b>bold</b> & more';
+    await summarize(page, { success: true, summary });
+    const [modal] = page.modals();
+    assert.ok(modal, 'modal added to the page');
+    const { text } = walk(modal);
+    assert.ok(text.includes(summary), 'the summary is one text node, unparsed');
+    assert.deepEqual(modal.children[0].children.map((c) => c.tagName), ['H3', 'P', 'DIV']);
+});
+
+test('the summary modal uses only tts- prefixed classes, so page CSS and ours never mix', async () => {
+    const page = fakePage();
+    await summarize(page, { success: false, error: 'Server down' });
+    const [modal] = page.modals();
+    const { text, classes } = walk(modal);
+    assert.ok(text.includes('Server down'));
+    assert.ok(classes.includes('tts-summary-unavailable'));
+    for (const name of [...classes, ...walk(page.buttons()[0]).classes]) {
+        assert.match(name, /^(tts-|hidden$)/, `unprefixed class: ${name}`);
+    }
+});
+
+test('a new summary replaces the open modal, and teardown removes it', async () => {
+    const page = fakePage();
+    await summarize(page, { success: true, summary: 'first' });
+    const summarizeBtn = page.buttons()[0].children[1];
+    page.select('more text');
+    page.fire('mouseup');
+    await summarizeBtn.listeners.click[0]({ stopPropagation() {} });
+    assert.equal(page.modals().length, 1);
+    page.context.__ttsStudyAssistant.teardown();
+    assert.equal(page.modals().length, 0);
+});
+
+test('the button stays inside the visible page when it is scrolled sideways', async () => {
+    const page = fakePage();
+    page.window.scrollX = 500;
+    page.window.innerWidth = 400; // visible: x from 500 to 900
+    await inject(page, fakeChrome());
+    page.select('near the right edge');
+    page.fire('mouseup'); // selection at viewport x 100..150, page x 600..650
+    const [button] = page.buttons();
+    assert.equal(button.style.left, '635px', 'page coordinates include scrollX');
+
+    page.window.innerWidth = 200; // now the button would overflow the right edge
+    page.fire('mouseup');
+    assert.equal(button.style.left, `${500 + 200 - 170 - 10}px`);
 });
