@@ -1,6 +1,6 @@
 # TTS Study Assistant
 
-A productivity tool for saving, organizing, and listening to notes from any website: a Chrome extension for quick capture and playback, a web dashboard, and a Go API.
+A productivity tool for saving, organizing, and listening to notes from any website: a browser extension for Chrome and Firefox for quick capture and playback, a web dashboard, and a Go API.
 
 [![Chrome Web Store version](https://img.shields.io/chrome-web-store/v/lpnchhblldgnnjgmkbmanggilffhbnnp?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp)
 
@@ -21,7 +21,7 @@ A productivity tool for saving, organizing, and listening to notes from any webs
 
 - `backend/` — Go/Fiber REST API: JWT auth, notes, AI summaries, user management
 - `frontend/` — React + Vite + shadcn/ui web dashboard
-- `extension/` — Chrome extension for saving and listening to notes from any site
+- `extension/` — browser extension (Chrome and Firefox) for saving and listening to notes from any site
 - `docs/screenshots/` — README and Chrome Web Store screenshots (1280×800)
 
 ## Quick start

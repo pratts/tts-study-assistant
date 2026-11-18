@@ -1,4 +1,4 @@
-# Chrome Extension — TTS Study Assistant
+# Browser Extension — TTS Study Assistant
 
 Save text from any page as a note, listen to it, and get AI summaries. Plain Manifest V3 (vanilla JS modules, no build step), backed by the Go API in [`../backend`](../backend) and linking to the web dashboard in [`../frontend`](../frontend).
 
