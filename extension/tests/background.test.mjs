@@ -5,14 +5,18 @@ import { test } from 'node:test';
 
 function event() {
     const listeners = [];
-    return { addListener: (fn) => listeners.push(fn), fire: (...args) => listeners.map((fn) => fn(...args)) };
+    return {
+        addListener: (fn) => listeners.push(fn),
+        fire: (...args) => listeners.map((fn) => fn(...args)),
+        count: () => listeners.length,
+    };
 }
 
 const ACTIVE_TAB = { id: 7, url: 'https://example.com/', title: 'Example' };
 const OPEN_TABS = [ACTIVE_TAB, { id: 8, url: 'chrome://extensions/' }, { id: 9, url: 'http://other.test/' }];
 
 function fakeChrome({ withTts }) {
-    const calls = { speak: [], tabMessages: [], scripts: [], css: [], notifications: [] };
+    const calls = { speak: [], tabMessages: [], scripts: [], css: [], notifications: [], popups: 0 };
     const chrome = {
         runtime: {
             onInstalled: event(),
@@ -48,7 +52,15 @@ function fakeChrome({ withTts }) {
             sync: { get: async () => ({ settings: { rate: 1 } }), set: async () => {} },
             local: { get: async () => ({}), set: async () => {}, remove: async () => {} }, // logged out
         },
-        action: { setBadgeText() {}, setBadgeBackgroundColor() {}, openPopup() {} },
+        action: {
+            setBadgeText() {},
+            setBadgeBackgroundColor() {},
+            // Chrome opens the popup; Firefox refuses once the user action has
+            // passed (every caller awaits first).
+            openPopup: withTts
+                ? async () => void calls.popups++
+                : async () => { throw new Error('openPopup requires a user gesture'); },
+        },
         notifications: { create: (options) => calls.notifications.push(options) },
     };
     if (withTts) {
@@ -138,8 +150,46 @@ for (const [browser, withTts] of [['chrome', true], ['firefox', false]]) {
         await Promise.all(chrome.commands.onCommand.fire('save-selection'));
         assert.deepEqual(calls.tabMessages, [], 'no message to the tab');
         assert.deepEqual(calls.scripts[0].target, { tabId: 7, allFrames: true });
-        // Logged out in this fake, so the selection was read and then login asked for.
-        assert.equal(calls.notifications.at(-1).title, 'Login Required');
+        // Logged out in this fake, so the selection was read and then login asked
+        // for: Chrome opens the popup, Firefox falls back to a notification.
+        if (withTts) {
+            assert.equal(calls.popups, 1);
+            assert.deepEqual(calls.notifications, []);
+        } else {
+            assert.equal(calls.popups, 0);
+            assert.equal(calls.notifications.at(-1).title, 'Login Required');
+        }
+    });
+
+    test(`${browser}: a long summary from the context menu is shortened for the notification`, async () => {
+        const { chrome, calls } = await loadBackground(`${browser}-long-summary`, { withTts });
+        chrome.storage.local.get = async () => ({ access_token: 'token' }); // logged in
+        const summary = 'This summary is far longer than a notification can show. '.repeat(20);
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (url) => {
+            const data = String(url).endsWith('/summarize') ? { summary } : { id: 'note-1' };
+            return new Response(JSON.stringify({ data }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        };
+        try {
+            await Promise.all(chrome.contextMenus.onClicked.fire(
+                { menuItemId: 'summarize-text', selectionText: 'some long article text' },
+                ACTIVE_TAB,
+            ));
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        const last = calls.notifications.at(-1);
+        assert.equal(last.title, 'Summary Ready!');
+        assert.ok([...last.message].length <= 200, `${[...last.message].length} characters`);
+        assert.match(last.message, /Open the extension for the full summary\.$/);
+    });
+
+    test(`${browser}: no tab update listener and no openPopup message`, async () => {
+        const { chrome, calls } = await loadBackground(`${browser}-cleanup`, { withTts });
+        assert.equal(chrome.tabs.onUpdated.count(), 0, 'the empty tabs.onUpdated listener is gone');
+        const handled = chrome.runtime.onMessage.fire({ action: 'openPopup' }, {}, () => {});
+        assert.deepEqual(handled.filter(Boolean), [], 'not answered asynchronously');
+        assert.equal(calls.popups, 0, 'nothing sends it, so nothing opens the popup');
     });
 
     test(`${browser}: the shortcut explains when the page can't be scripted`, async () => {

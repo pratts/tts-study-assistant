@@ -45,6 +45,35 @@ export function truncate(text, max) {
     return chars.length <= max ? text : chars.slice(0, max).join('') + '…';
 }
 
+/** Longest notification message we send; Firefox cuts longer ones off. */
+export const NOTIFICATION_MAX = 200;
+
+/**
+ * Text shortened for a notification: whitespace collapsed, at most `max`
+ * characters including the "…", cut at a word boundary when one is near.
+ * Counts graphemes, so emoji and accented letters are never split.
+ */
+export function truncateForNotification(text, max = NOTIFICATION_MAX) {
+    const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+    const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(clean)].map((s) => s.segment);
+    if (graphemes.length <= max) return clean;
+    const cut = graphemes.slice(0, max - 1).join('');
+    const space = cut.lastIndexOf(' ');
+    // Back up to the last word only if that keeps most of the text.
+    const head = space >= cut.length * 0.7 ? cut.slice(0, space) : cut;
+    return `${head.replace(/[\s.,;:!?-]+$/, '')}…`;
+}
+
+const FULL_SUMMARY_HINT = ' Open the extension for the full summary.';
+
+/** A summary short enough for a notification (Firefox cuts long ones off). */
+export function summaryNotification(summary) {
+    if (!summary) return 'Summary generated successfully.';
+    const short = truncateForNotification(summary);
+    if (short === summary.replace(/\s+/g, ' ').trim()) return short;
+    return truncateForNotification(summary, NOTIFICATION_MAX - FULL_SUMMARY_HINT.length) + FULL_SUMMARY_HINT;
+}
+
 export function relativeDate(iso, now = Date.now()) {
     const date = new Date(iso);
     const mins = Math.floor((now - date.getTime()) / 60000);

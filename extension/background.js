@@ -5,7 +5,9 @@ import { ApiClient, SUMMARY_UNAVAILABLE } from './js/api-client.js';
 import { errorMessage } from './js/errors.js';
 import { TtsEngine } from './js/tts-engine.js';
 import { pickTts } from './js/tts-webspeech.js';
+import { promptLogin } from './js/login-prompt.js';
 import { injectIntoOpenTabs, readSelection, selectionErrorMessage } from './js/site-access.js';
+import { summaryNotification } from './js/utils.js';
 
 const apiClient = new ApiClient();
 
@@ -75,10 +77,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'saveNote':
             handleSaveNote(request.noteData, sendResponse);
             return true; // Will respond asynchronously
-
-        case 'openPopup':
-            chrome.action.openPopup();
-            break;
 
         case 'speak':
             // An explicit play replaces what is playing (the old "queue decision"
@@ -162,7 +160,7 @@ async function handleMessageSummarize(request, sendResponse) {
     }
 }
 
-// Keyboard command declared in manifest.json ("save-selection", Alt+S).
+// Keyboard command declared in manifest.json ("save-selection", Alt+Shift+Y).
 chrome.commands.onCommand.addListener(async (command) => {
     if (command !== 'save-selection') return;
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -180,7 +178,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     if (!text) return;
     try {
         if (!(await ApiClient.isAuthenticated())) {
-            notify('Login Required', 'Please login to save notes. Click the extension icon.');
+            await askToLogIn();
             return;
         }
         await apiClient.createNote({ content: text, source_url: tab.url, source_title: tab.title });
@@ -213,17 +211,15 @@ function notify(title, message) {
     chrome.notifications.create({ type: 'basic', iconUrl: 'icons/icon-48.png', title, message });
 }
 
+/** Opens the popup to log in, or says how to when the browser won't open it. */
+function askToLogIn() {
+    return promptLogin({ action: chrome.action, notify });
+}
+
 // A speed change while playing takes effect at the current word.
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync' || !changes.settings) return;
     if (changes.settings.oldValue?.rate !== changes.settings.newValue?.rate) engine.applyRate();
-});
-
-// Listen for tab updates to inject content script if needed
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tab.url) {
-        // Content script should auto-inject, but this is a fallback
-    }
 });
 
 // Handle note saving
@@ -278,12 +274,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 };
                 const isAuthenticated = await ApiClient.isAuthenticated();
                 if (!isAuthenticated) {
-                    chrome.notifications.create({
-                        type: 'basic',
-                        iconUrl: 'icons/icon-48.png',
-                        title: 'Login Required',
-                        message: 'Please login to save notes. Click the extension icon.'
-                    });
+                    await askToLogIn();
                     return;
                 }
 
@@ -327,12 +318,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             try {
                 const isAuthenticated = await ApiClient.isAuthenticated();
                 if (!isAuthenticated) {
-                    chrome.notifications.create({
-                        type: 'basic',
-                        iconUrl: 'icons/icon-48.png',
-                        title: 'Login Required',
-                        message: 'Please login to save notes. Click the extension icon.'
-                    });
+                    await askToLogIn();
                     return;
                 }
 
@@ -362,13 +348,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                         message: 'Text may be too short or incomplete for summarization.'
                     });
                 } else {
-                    // Show summary notification
-                    chrome.notifications.create({
-                        type: 'basic',
-                        iconUrl: 'icons/icon-48.png',
-                        title: 'Summary Ready!',
-                        message: summary.summary || 'Summary generated successfully.'
-                    });
+                    notify('Summary Ready!', summaryNotification(summary.summary));
                 }
             } catch (error) {
                 console.error('Failed to summarize:', error);
