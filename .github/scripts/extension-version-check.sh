@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Fails unless the extension's version is higher than every version it must
-# beat: main's manifest.json and the latest extension-v* release tag. The
-# Chrome Web Store only accepts uploads with a higher version than the
-# published one, so every shipped change needs a bump.
+# beat: main's manifest.json and the latest extension-v* release tag. Both
+# stores need it: the Chrome Web Store only accepts a higher version than the
+# published one, and addons.mozilla.org rejects any version number it has seen
+# before (even a rejected or deleted one). So every shipped change needs a bump.
 #
 #   .github/scripts/extension-version-check.sh <new-version> <base-version> [latest-release-version]
 set -euo pipefail
@@ -11,7 +12,8 @@ new="$1"
 base="$2"
 released="${3:-}"
 
-# Chrome: 1-4 dot-separated integers, each 0-65535, no leading zeros.
+# Chrome: 1-4 dot-separated integers, each 0-65535, no leading zeros. Every
+# such version is also a valid Firefox version, so one rule covers both stores.
 valid() {
   [[ "$1" =~ ^(0|[1-9][0-9]{0,4})(\.(0|[1-9][0-9]{0,4})){0,3}$ ]] || return 1
   local IFS=. part

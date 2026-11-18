@@ -16,7 +16,10 @@ previous="$(git tag -l 'extension-v*' --sort=v:refname | awk -v t="${tag}" '$0 =
 range="${previous:+${previous}..}${tag}"
 
 {
-  echo "Chrome extension **v${version}**: install by unzipping the attached file and loading it at \`chrome://extensions\` (Developer mode → Load unpacked), or upload the zip to the Chrome Web Store."
+  echo "Extension **v${version}** for Chrome and Firefox. The attached \`tts-study-assistant-extension-v${version}.zip\` is the package for both stores: upload it to the Chrome Web Store and to addons.mozilla.org."
+  echo
+  echo "- **Chrome:** unzip and load the folder at \`chrome://extensions\` (Developer mode → Load unpacked)."
+  echo "- **Firefox:** \`about:debugging#/runtime/this-firefox\` → Load Temporary Add-on → pick the zip. A \`tts-study-assistant-firefox-v${version}.xpi\`, when attached, is the version signed by addons.mozilla.org."
   echo
   echo "### Changes in \`extension/\`"
   echo

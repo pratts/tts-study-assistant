@@ -1,18 +1,31 @@
 name: Extension release
 
-# Publishes the Chrome extension when a maintainer pushes a version tag:
+# Publishes the extension (one zip for the Chrome Web Store and
+# addons.mozilla.org) when a maintainer pushes a version tag:
 #
 #   git tag -s extension-v0.2.1 -m "Extension v0.2.1"
 #   git push origin extension-v0.2.1
 #
 # Checks that the tag matches extension/manifest.json at the tagged commit and
-# that the commit is on main, then attaches
-# tts-study-assistant-extension-v<version>.zip to a GitHub Release whose notes
-# list only extension/ changes since the previous extension-v* tag.
+# that the commit is on main, lints the package with Mozilla's web-ext, then
+# attaches tts-study-assistant-extension-v<version>.zip to a GitHub Release
+# whose notes list only extension/ changes since the previous extension-v* tag.
+#
+# addons.mozilla.org: when the AMO_JWT_ISSUER and AMO_JWT_SECRET repository
+# secrets are set, the same files are submitted as a listed version, and the
+# signed .xpi is attached to the release if AMO signs it within 10 minutes.
+# Without the secrets, that job is skipped. The first version must be submitted
+# by hand (see extension/README.md).
+#
+# Run it manually (Actions → Extension release → Run workflow) for a dry run:
+# it builds, checks and lints the zip and uploads it as a workflow artifact,
+# without a release or an AMO submission.
+#
 # Merging to main releases nothing.
 on:
   push:
     tags: ["extension-v*"]
+  workflow_dispatch:
 
 # Write access applies only to this workflow's token: it creates the release
 # for the pushed tag. Other workflows stay read-only.
@@ -27,50 +40,61 @@ jobs:
   release:
     name: Package and release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      publish: ${{ steps.meta.outputs.publish }}
+      amo: ${{ steps.amo.outputs.enabled }}
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.ref_name }}
+      DRY_RUN: ${{ github.event_name != 'push' }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # main and all tags, for the checks and the notes
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
 
       - name: Check tag, version and branch
         id: meta
         run: |
-          version="${TAG#extension-v}"
-          # Chrome's version rules (1-4 integers, 0-65535, no leading zeros).
-          if ! .github/scripts/extension-version-check.sh "$version" 0 > /dev/null; then
-            echo "::error::Tag $TAG does not contain a valid Chrome version" && exit 1
-          fi
           manifest=$(jq -er '.version' extension/manifest.json)
-          if [[ "$manifest" != "$version" ]]; then
-            echo "::error file=extension/manifest.json::Tag $TAG does not match manifest.json version $manifest at this commit. Delete the tag, bump the manifest (or fix the tag) and tag again."
-            exit 1
+          if [[ "$DRY_RUN" == "true" ]]; then
+            # Manual run: package whatever manifest.json says on this ref.
+            version="$manifest"
+            echo "::notice::Dry run of v${version} from ${GITHUB_REF_NAME}: no release, no AMO submission."
+          else
+            version="${TAG#extension-v}"
           fi
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::Tag $TAG points to ${GITHUB_SHA::7}, which is not on main. Tag a commit that has been merged to main."
-            exit 1
+          # Chrome's version rules (1-4 integers, 0-65535, no leading zeros);
+          # every such version is also valid on addons.mozilla.org.
+          if ! .github/scripts/extension-version-check.sh "$version" 0 > /dev/null; then
+            echo "::error::$version is not a valid extension version" && exit 1
           fi
-          exists=false
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            exists=true
-            echo "::notice::Release $TAG already exists; nothing to do."
+          publish=false
+          if [[ "$DRY_RUN" != "true" ]]; then
+            if [[ "$manifest" != "$version" ]]; then
+              echo "::error file=extension/manifest.json::Tag $TAG does not match manifest.json version $manifest at this commit. Delete the tag, bump the manifest (or fix the tag) and tag again."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::Tag $TAG points to ${GITHUB_SHA::7}, which is not on main. Tag a commit that has been merged to main."
+              exit 1
+            fi
+            if gh release view "$TAG" > /dev/null 2>&1; then
+              echo "::notice::Release $TAG already exists; nothing to do."
+            else
+              publish=true
+            fi
           fi
           {
             echo "version=$version"
             echo "archive=tts-study-assistant-extension-v${version}.zip"
-            echo "exists=$exists"
+            echo "publish=$publish"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Write release notes
-        if: steps.meta.outputs.exists == 'false'
-        run: |
-          .github/scripts/extension-release-notes.sh "$TAG" release-notes.md
-          cat release-notes.md
-
       - name: Create zip
-        if: steps.meta.outputs.exists == 'false'
         env:
           ARCHIVE: ${{ steps.meta.outputs.archive }}
         run: |
@@ -81,8 +105,26 @@ jobs:
           unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/package"
           node .github/scripts/extension-checks.mjs package "$RUNNER_TEMP/package"
 
+      - name: web-ext lint
+        # The linter addons.mozilla.org runs on upload; the same script as CI.
+        run: .github/scripts/extension-lint.sh "$RUNNER_TEMP/package" "$RUNNER_TEMP"
+
+      - name: Upload the zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-package
+          path: ${{ steps.meta.outputs.archive }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Write release notes
+        if: steps.meta.outputs.publish == 'true'
+        run: |
+          .github/scripts/extension-release-notes.sh "$TAG" release-notes.md
+          cat release-notes.md
+
       - name: Create release
-        if: steps.meta.outputs.exists == 'false'
+        if: steps.meta.outputs.publish == 'true'
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           ARCHIVE: ${{ steps.meta.outputs.archive }}
@@ -92,19 +134,117 @@ jobs:
             --title "Extension v${VERSION}" \
             --notes-file release-notes.md
 
-      - name: Summary
+      - name: AMO secrets set?
+        id: amo
+        if: steps.meta.outputs.publish == 'true'
         env:
-          EXISTS: ${{ steps.meta.outputs.exists }}
+          # Empty on forks and when the secrets aren't configured.
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [[ -n "$AMO_JWT_ISSUER" && -n "$AMO_JWT_SECRET" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AMO_JWT_ISSUER/AMO_JWT_SECRET not set: submit the zip to addons.mozilla.org by hand."
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          PUBLISH: ${{ steps.meta.outputs.publish }}
           ARCHIVE: ${{ steps.meta.outputs.archive }}
+          AMO: ${{ steps.amo.outputs.enabled }}
         run: |
           {
             echo "### Extension release ${TAG}"
             echo ""
-            if [[ "$EXISTS" == "true" ]]; then
-              echo "The release already existed; nothing was changed."
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "Dry run: \`${ARCHIVE}\` built, checked and linted; download it from this run's artifacts. Nothing was released."
+            elif [[ "$PUBLISH" == "true" ]]; then
+              echo "Created release \`${TAG}\` with \`${ARCHIVE}\` from \`${GITHUB_SHA::7}\`, for the Chrome Web Store and addons.mozilla.org."
+              if [[ "$AMO" == "true" ]]; then
+                echo "addons.mozilla.org: submitting (see the next job)."
+              else
+                echo "addons.mozilla.org: secrets not set; upload the zip by hand."
+              fi
             else
-              echo "Created release \`${TAG}\` with \`${ARCHIVE}\` from \`${GITHUB_SHA::7}\`."
+              echo "The release already existed or a check failed; nothing was changed."
             fi
             echo ""
+            if [ -f "$RUNNER_TEMP/lint.txt" ]; then
+              echo '```'
+              sed 's/^::[a-z]*:://' "$RUNNER_TEMP/lint.txt"
+              echo '```'
+            fi
             echo "[Releases](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  amo:
+    name: Submit to addons.mozilla.org
+    needs: release
+    # Only for a new release from a tag push, and only when the secrets exist
+    # (never on forks, pull requests or dry runs).
+    if: needs.release.outputs.publish == 'true' && needs.release.outputs.amo == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      WEB_EXT_VERSION: 10.8.0 # the same as extension-lint.sh
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Download the released zip
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-package
+          path: ${{ runner.temp }}/zip
+      - name: Unzip
+        # Submit exactly the files in the released zip.
+        run: |
+          mkdir "$RUNNER_TEMP/package"
+          unzip -q "$RUNNER_TEMP"/zip/*.zip -d "$RUNNER_TEMP/package"
+      - name: web-ext sign (listed)
+        id: sign
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          # A listed version may wait for Mozilla's review; give automatic
+          # signing 10 minutes, then leave the signed file to AMO.
+          set +e
+          npx --yes "web-ext@${WEB_EXT_VERSION}" sign \
+            --source-dir "$RUNNER_TEMP/package" \
+            --artifacts-dir "$RUNNER_TEMP/signed" \
+            --channel listed \
+            --approval-timeout 600000 \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET" 2>&1 | tee "$RUNNER_TEMP/sign.log"
+          code=${PIPESTATUS[0]}
+          set -e
+          node .github/scripts/extension-checks.mjs amo-result "$code" "$RUNNER_TEMP/sign.log" "$RUNNER_TEMP/signed" >> "$GITHUB_OUTPUT"
+      - name: Attach the signed .xpi
+        if: steps.sign.outputs.status == 'signed'
+        env:
+          XPI: ${{ steps.sign.outputs.xpi }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          signed="$RUNNER_TEMP/tts-study-assistant-firefox-v${VERSION}.xpi"
+          cp "$XPI" "$signed"
+          gh release upload "$TAG" "$signed"
+      - name: Summary
+        if: always()
+        env:
+          STATUS: ${{ steps.sign.outputs.status }}
+        run: |
+          {
+            echo "### addons.mozilla.org"
+            echo ""
+            case "$STATUS" in
+              signed)  echo "Submitted and signed; the .xpi is attached to the release." ;;
+              pending) echo "Submitted; waiting for Mozilla's review. The signed file will be on addons.mozilla.org once approved." ;;
+              *)       echo "Submission failed; see the log. Fix it, then upload the release zip by hand (AMO rejects a version number it has already seen)." ;;
+            esac
           } >> "$GITHUB_STEP_SUMMARY"

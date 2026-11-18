@@ -102,7 +102,9 @@ The engine lives in the background: Chrome's service worker, or Firefox's event 
 
 Releases are manual: merging to `main` publishes nothing.
 
-1. **Bump the version** in `manifest.json` (and `package.json`) in your PR: patch for fixes, minor for features. The **Extension version bumped** check fails a PR that changes shipped files without raising the version above `main` and the latest release. The Chrome Web Store rejects same-version uploads.
+One zip serves both stores (one `manifest.json`; each browser ignores the other's keys).
+
+1. **Bump the version** in `manifest.json` (and `package.json`) in your PR: patch for fixes, minor for features. The **Extension version bumped** check fails a PR that changes shipped files without raising the version above `main` and the latest release. The Chrome Web Store rejects same-version uploads, and addons.mozilla.org (AMO) rejects any version number it has seen before, even a rejected or deleted one.
 2. **Merge the PR.**
 3. **Tag the merge commit on `main` and push the tag:**
    ```sh
@@ -112,9 +114,32 @@ Releases are manual: merging to `main` publishes nothing.
    ```
 4. **The *Extension release* workflow** then:
    - checks that the tag matches `manifest.json` at that commit and that the commit is on `main`;
-   - builds `tts-study-assistant-extension-v0.2.1.zip` with `.github/scripts/extension-package.sh` (runtime files only, `manifest.json` at the root) and runs the same package check as Extension CI;
-   - creates the GitHub Release "Extension v0.2.1", with notes listing the `extension/` commits since the previous tag.
-5. **Upload the zip** to the Chrome Web Store, or install it unpacked.
+   - builds `tts-study-assistant-extension-v0.2.1.zip` with `.github/scripts/extension-package.sh` (runtime files only, `manifest.json` at the root), runs the same package check as Extension CI, and lints it with `web-ext` (AMO's linter) via `.github/scripts/extension-lint.sh`;
+   - creates the GitHub Release "Extension v0.2.1", with notes listing the `extension/` commits since the previous tag;
+   - if the AMO secrets are set, submits the same files to AMO as a listed version (see below).
+5. **Chrome Web Store:** upload the zip in the [developer dashboard](https://chrome.google.com/webstore/devconsole).
+6. **addons.mozilla.org:** done by the workflow when the secrets are set; otherwise upload the zip by hand (below).
+
+**Dry run:** *Actions → Extension release → Run workflow* builds, checks and lints the zip from any branch and keeps it as a workflow artifact for 7 days. No tag, no release, no AMO submission.
+
+### addons.mozilla.org
+
+**First version (by hand, once):** the listing needs details only the web form takes.
+1. Sign in at the [AMO Developer Hub](https://addons.mozilla.org/developers/) → *Submit a New Add-on* → *On this site* (listed).
+2. Upload the release zip. The add-on ID comes from `browser_specific_settings.gecko.id` and can't change afterwards.
+3. Fill in the listing: name, summary, description, categories, the privacy policy URL (`https://tts-study-assistant.vercel.app/privacy-policy`), screenshots and support email.
+4. In *Notes to Reviewer*, explain each permission (the table under [Website access](#website-access)) and that `js/config.js` and `js/tts-webspeech.js` are plain source, not minified, so no source upload is needed.
+5. Submit. Mozilla signs it after automatic checks and may review it by hand later.
+
+**Later versions:** upload each release zip as a new version in the Developer Hub, or let the workflow do it:
+1. Create API credentials at [Manage API Keys](https://addons.mozilla.org/developers/addon/api/key/).
+2. Add them as repository secrets **`AMO_JWT_ISSUER`** (the JWT issuer) and **`AMO_JWT_SECRET`** (the JWT secret): *Settings → Secrets and variables → Actions*.
+3. On each tag, the **Submit to addons.mozilla.org** job runs `web-ext sign --channel listed` on the released files. Its summary says one of:
+   - **Signed:** AMO signed it within 10 minutes; `tts-study-assistant-firefox-v<version>.xpi` is attached to the release.
+   - **Waiting for review:** submitted, and the signed file appears on AMO once approved. Not a failure.
+   - **Failed:** for example bad credentials or validation errors. The job fails; fix it and upload by hand.
+
+Without the secrets, and on forks, the job is skipped, not failed.
 
 **Wrong tag?** If the workflow fails because the tag doesn't match the manifest, delete the tag and push a corrected one:
 ```sh
@@ -133,8 +158,7 @@ The **Extension package and Firefox lint** CI job checks what actually ships. Ru
 ```sh
 .github/scripts/extension-package.sh /tmp/ext.zip && rm -rf /tmp/ext && unzip -q /tmp/ext.zip -d /tmp/ext
 node .github/scripts/extension-checks.mjs package /tmp/ext   # manifest at the root, both browsers' keys, no dev files, every referenced file present
-npx web-ext@10.8.0 lint --source-dir /tmp/ext --output json > /tmp/lint.json
-node .github/scripts/extension-checks.mjs lint /tmp/lint.json .github/scripts/extension-lint-allowlist.json
+.github/scripts/extension-lint.sh /tmp/ext /tmp/ext-lint     # web-ext lint (version pinned in the script) against the allowlist
 node --test .github/scripts/*.test.mjs                        # tests for the checks themselves
 ```
 

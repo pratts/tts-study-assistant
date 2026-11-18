@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
-import { checkLint, checkPackage, listFiles, matches } from './extension-checks.mjs';
+import { amoSignOutcome, checkLint, checkPackage, listFiles, main, matches } from './extension-checks.mjs';
 
 const dirs = [];
 after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -152,4 +152,66 @@ test('the checked-in allowlist is well formed', () => {
         assert.equal(typeof entry.code, 'string');
         assert.ok(entry.reason?.length > 20, `${entry.code} needs a real reason`);
     }
+});
+
+test('amoSignOutcome: a signed .xpi downloaded within the timeout', () => {
+    const outcome = amoSignOutcome({ exitCode: 0, log: 'Downloaded:\n./tts_study_assistant-0.3.5.xpi', files: ['tts_study_assistant-0.3.5.xpi'] });
+    assert.deepEqual(outcome, { status: 'signed', xpi: 'tts_study_assistant-0.3.5.xpi' });
+});
+
+test('amoSignOutcome: submitted but awaiting review is pending, not failed', () => {
+    const log = 'Waiting for approval...\nWebExtError: Approval: timeout exceeded. When approved the signed XPI file can be downloaded from https://addons.mozilla.org/developers/addon/x/versions/1';
+    assert.deepEqual(amoSignOutcome({ exitCode: 1, log, files: [] }), { status: 'pending' });
+    // --approval-timeout 0, or a success with nothing downloaded.
+    assert.deepEqual(amoSignOutcome({ exitCode: 0, log: 'Waiting for approval and download of signed XPI skipped.', files: [] }), { status: 'pending' });
+});
+
+test('amoSignOutcome: real errors fail with their message', () => {
+    // A validation timeout is a different context from approval.
+    for (const log of ['WebExtError: Validation: timeout exceeded.', 'Error: Upload failed: Unauthorized.\n{"detail": "Incorrect authentication credentials."}']) {
+        const outcome = amoSignOutcome({ exitCode: 1, log, files: [] });
+        assert.equal(outcome.status, 'failed', log);
+        assert.match(outcome.reason, /timeout exceeded|Unauthorized/);
+    }
+    assert.deepEqual(amoSignOutcome({ exitCode: 3, log: '', files: [] }), { status: 'failed', reason: 'web-ext sign exited with 3' });
+});
+
+test('amo-result command prints GitHub outputs and fails only on errors', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'amo-'));
+    dirs.push(dir);
+    const artifacts = join(dir, 'artifacts');
+    mkdirSync(artifacts);
+    const log = join(dir, 'sign.log');
+    const run = (exitCode, text) => {
+        writeFileSync(log, text);
+        const lines = [];
+        const errors = [];
+        const [out, err] = [console.log, console.error];
+        console.log = (l) => lines.push(l);
+        console.error = (l) => errors.push(l);
+        try {
+            return { code: main(['amo-result', String(exitCode), log, artifacts]), lines, errors };
+        } finally {
+            [console.log, console.error] = [out, err];
+        }
+    };
+
+    assert.deepEqual(run(1, 'WebExtError: Approval: timeout exceeded.'), { code: 0, lines: ['status=pending'], errors: [] });
+    const failed = run(1, 'Error: Upload failed: Forbidden.');
+    assert.equal(failed.code, 1);
+    assert.deepEqual(failed.lines, ['status=failed']);
+    assert.match(failed.errors[0], /^::error::addons\.mozilla\.org submission failed: Error: Upload failed: Forbidden\.$/);
+
+    writeFileSync(join(artifacts, 'tts_study_assistant-0.3.5.xpi'), 'signed');
+    assert.deepEqual(run(0, 'Downloaded'), { code: 0, lines: ['status=signed', `xpi=${join(artifacts, 'tts_study_assistant-0.3.5.xpi')}`], errors: [] });
+});
+
+test('the release workflow signs with the web-ext version the lint script pins', () => {
+    // amoSignOutcome matches web-ext's approval-timeout message, so both must
+    // move together (and the allowlist is tuned to that version's linter).
+    const pinned = (path, re) => readFileSync(new URL(path, import.meta.url), 'utf8').match(re)?.[1];
+    const lint = pinned('./extension-lint.sh', /WEB_EXT_VERSION="\$\{WEB_EXT_VERSION:-([\d.]+)\}"/);
+    const release = pinned('../workflows/extension-release.yml', /WEB_EXT_VERSION: ([\d.]+)/);
+    assert.ok(lint, 'version not found in extension-lint.sh');
+    assert.equal(release, lint);
 });

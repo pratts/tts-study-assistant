@@ -83,11 +83,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.extension == 'true'
-    env:
-      # Pinned for reproducible lint results. To update: bump this, run the
-      # job, and adjust extension-lint-allowlist.json for new or removed
-      # warnings (https://github.com/mozilla/web-ext/releases).
-      WEB_EXT_VERSION: 10.8.0
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -103,18 +98,13 @@ jobs:
       - name: Check the package
         run: node .github/scripts/extension-checks.mjs package "$RUNNER_TEMP/package"
       - name: web-ext lint
-        run: |
-          set -o pipefail # the check's exit code, not tee's
-          # web-ext exits non-zero on lint errors; the check below reports them.
-          npx --yes "web-ext@${WEB_EXT_VERSION}" lint \
-            --source-dir "$RUNNER_TEMP/package" --output json > "$RUNNER_TEMP/lint.json" || true
-          node .github/scripts/extension-checks.mjs lint "$RUNNER_TEMP/lint.json" .github/scripts/extension-lint-allowlist.json \
-            | tee "$RUNNER_TEMP/lint.txt"
+        # The same script as the release workflow; web-ext is pinned in it.
+        run: .github/scripts/extension-lint.sh "$RUNNER_TEMP/package" "$RUNNER_TEMP"
       - name: Summary
         if: always()
         run: |
           {
-            echo "### Extension package and Firefox lint (web-ext ${WEB_EXT_VERSION})"
+            echo "### Extension package and Firefox lint"
             echo ""
             if [ -f "$RUNNER_TEMP/lint.txt" ]; then
               echo '```'
