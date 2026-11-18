@@ -39,7 +39,7 @@ A productivity tool for saving, organizing, and listening to notes from any webs
 
 ## Features
 
-- Save text from any page as a note: floating button, right-click menu, or Alt+S
+- Save text from any page as a note: floating button, right-click menu, or Alt+Shift+Y
 - Text-to-speech playback with pause/resume, a progress bar and four speeds
 - AI summaries of notes, with a toggle between the note and its summary
 - Notes grouped by site, plus a web dashboard to browse, edit and delete them

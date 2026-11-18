@@ -65,7 +65,7 @@ The selection button is a content script and needs access to the page's site; lo
 
 ## Features
 
-- **Page selection:** a floating **Save & Play** / **Summarize** button; right-click → Study Assistant (Save, Play, Summarize); **Alt+S** saves the selection.
+- **Page selection:** a floating **Save & Play** / **Summarize** button; right-click → Study Assistant (Save, Play, Summarize); **Alt+Shift+Y** saves the selection and **Alt+Shift+S** opens the popup (change them at `chrome://extensions/shortcuts` or Firefox's Add-ons → ⚙ → Manage Extension Shortcuts). Alt+S was dropped because it opens Firefox's History menu on Windows and Linux.
 - **Popup:**
   - **Speed:** 0.5x / 1x / 1.5x / 2x. Older saved speeds snap to the nearest step.
   - **Player:** elapsed/total scrubber, Play/Pause, and Stop (rewinds to 0).

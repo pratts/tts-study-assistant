@@ -99,6 +99,23 @@ test('the backend host is a host permission of its own', () => {
     assert.ok(manifest.host_permissions.includes('<all_urls>'), 'the selection button needs <all_urls>');
 });
 
+test('command shortcuts avoid Alt+S and never clash', () => {
+    // Alt+S opens Firefox's History menu on Windows and Linux.
+    const platforms = ['default', 'mac', 'windows', 'linux', 'chromeos'];
+    for (const platform of platforms) {
+        const keys = Object.entries(manifest.commands)
+            .map(([name, { suggested_key: k = {} }]) => [name, k[platform] ?? k.default])
+            .filter(([, key]) => key);
+        for (const [name, key] of keys) {
+            assert.notEqual(key.replace(/\s/g, ''), 'Alt+S', `${name} uses Alt+S on ${platform}`);
+            // Both browsers need Ctrl or Alt (MacCtrl/Command on macOS) plus one key.
+            assert.match(key, /^(Ctrl|Alt|Command|MacCtrl)\+(Shift\+)?[A-Z0-9]$/, `${name}: ${key}`);
+        }
+        const unique = new Set(keys.map(([, key]) => key));
+        assert.equal(unique.size, keys.length, `two commands share a shortcut on ${platform}`);
+    }
+});
+
 test('manifest and package.json versions match', () => {
     assert.equal(manifest.version, pkg.version);
 });

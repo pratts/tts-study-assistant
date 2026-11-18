@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "TTS Study Assistant",
-    "version": "0.3.2",
+    "version": "0.3.3",
     "description": "Save and listen to text from any webpage",
     "minimum_chrome_version": "121",
     "permissions": [
@@ -55,11 +55,8 @@
     "commands": {
         "save-selection": {
             "suggested_key": {
-                "default": "Alt+S",
-                "mac": "Alt+S",
-                "windows": "Alt+S",
-                "chromeos": "Alt+S",
-                "linux": "Alt+S"
+                "default": "Alt+Shift+Y",
+                "mac": "Alt+Shift+Y"
             },
             "description": "Save selected text as note"
         },
