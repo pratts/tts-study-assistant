@@ -3,12 +3,15 @@
 //
 //   node .github/scripts/extension-checks.mjs package <unzipped-package-dir>
 //   node .github/scripts/extension-checks.mjs lint <web-ext-lint.json> <allowlist.json>
+//   node .github/scripts/extension-checks.mjs amo-result <exit-code> <web-ext-sign.log> <artifacts-dir>
 //
 // package: the zip has what both browsers need and nothing development-only.
 // lint:    `web-ext lint --output json` has no errors, and every warning is
 //          on the allowlist (each entry says why it is accepted). Allowlist
 //          entries that no longer match are reported, so the list shrinks
 //          when a warning is fixed.
+// amo-result: what `web-ext sign --channel listed` achieved (see amoSignOutcome),
+//          printed as `status=` and `xpi=` lines for $GITHUB_OUTPUT.
 //
 // Problems are printed as GitHub annotations (::error / ::warning).
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -134,6 +137,27 @@ export function checkLint(report, allowlist) {
     return { errors: report.errors, unexpected, allowed, unused: allowlist.filter((e) => !used.has(e)) };
 }
 
+// web-ext (pinned in extension-lint.sh and the release workflow) rejects with
+// this when the version was submitted but AMO hasn't approved and signed it
+// within --approval-timeout. Listed versions can wait for review, so that is
+// not a failure: the signed file appears on AMO later.
+const APPROVAL_TIMEOUT = 'Approval: timeout exceeded.';
+
+/**
+ * The outcome of `web-ext sign --channel listed`.
+ * @param {{exitCode: number, log: string, files: string[]}} run
+ *   exit code, combined output, and the files web-ext left in --artifacts-dir
+ * @returns {{status: 'signed', xpi: string} | {status: 'pending'} | {status: 'failed', reason: string}}
+ */
+export function amoSignOutcome({ exitCode, log, files }) {
+    const xpi = files.filter((f) => f.endsWith('.xpi')).sort().at(-1);
+    if (exitCode === 0 && xpi) return { status: 'signed', xpi };
+    if (log.includes(APPROVAL_TIMEOUT)) return { status: 'pending' };
+    if (exitCode === 0) return { status: 'pending' }; // submitted, nothing downloaded
+    const reason = log.match(/(?:WebExtError|Error): .*/)?.[0] ?? `web-ext sign exited with ${exitCode}`;
+    return { status: 'failed', reason };
+}
+
 const describe = (m) => `${m.code}: ${m.message}${m.file ? ` (${m.file})` : ''}`;
 // Annotation text must stay on one line.
 const oneLine = (s) => String(s).replace(/\r?\n/g, ' ');
@@ -163,7 +187,22 @@ function main([command, ...args]) {
         console.log(`web-ext lint OK: 0 errors, ${allowed.length} allowed warnings.`);
         return 0;
     }
-    console.error('usage: extension-checks.mjs package <dir> | lint <report.json> <allowlist.json>');
+    if (command === 'amo-result' && args.length === 3) {
+        const [exitCode, logFile, artifactsDir] = args;
+        const outcome = amoSignOutcome({
+            exitCode: Number(exitCode),
+            log: existsSync(logFile) ? readFileSync(logFile, 'utf8') : '',
+            files: existsSync(artifactsDir) ? listFiles(artifactsDir) : [],
+        });
+        console.log(`status=${outcome.status}`);
+        if (outcome.status === 'signed') console.log(`xpi=${join(artifactsDir, outcome.xpi)}`);
+        if (outcome.status === 'failed') {
+            console.error(`::error::addons.mozilla.org submission failed: ${oneLine(outcome.reason)}`);
+            return 1;
+        }
+        return 0;
+    }
+    console.error('usage: extension-checks.mjs package <dir> | lint <report.json> <allowlist.json> | amo-result <exit-code> <log> <artifacts-dir>');
     return 2;
 }
 
