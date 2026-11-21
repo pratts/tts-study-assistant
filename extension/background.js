@@ -7,9 +7,12 @@ import { TtsEngine } from './js/tts-engine.js';
 import { pickTts } from './js/tts-webspeech.js';
 import { promptLogin } from './js/login-prompt.js';
 import { injectIntoOpenTabs, readSelection, selectionErrorMessage } from './js/site-access.js';
-import { summaryNotification } from './js/utils.js';
 
 const apiClient = new ApiClient();
+
+// Only a pointer, not the summary: macOS and others cut long notification text
+// off, and the full summary is in the popup.
+const SUMMARY_READY_MESSAGE = 'Your summary is ready. Open the extension to read it.';
 
 const engine = new TtsEngine({
     // chrome.tts in Chrome; Firefox has no chrome.tts, so the Web Speech API.
@@ -348,7 +351,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                         message: 'Text may be too short or incomplete for summarization.'
                     });
                 } else {
-                    notify('Summary Ready!', summaryNotification(summary.summary));
+                    notify('Summary Ready!', SUMMARY_READY_MESSAGE);
                 }
             } catch (error) {
                 console.error('Failed to summarize:', error);
