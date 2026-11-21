@@ -161,7 +161,7 @@ for (const [browser, withTts] of [['chrome', true], ['firefox', false]]) {
         }
     });
 
-    test(`${browser}: a long summary from the context menu is shortened for the notification`, async () => {
+    test(`${browser}: a summary from the context menu is announced, not shown, in the notification`, async () => {
         const { chrome, calls } = await loadBackground(`${browser}-long-summary`, { withTts });
         chrome.storage.local.get = async () => ({ access_token: 'token' }); // logged in
         const summary = 'This summary is far longer than a notification can show. '.repeat(20);
@@ -180,8 +180,8 @@ for (const [browser, withTts] of [['chrome', true], ['firefox', false]]) {
         }
         const last = calls.notifications.at(-1);
         assert.equal(last.title, 'Summary Ready!');
-        assert.ok([...last.message].length <= 200, `${[...last.message].length} characters`);
-        assert.match(last.message, /Open the extension for the full summary\.$/);
+        assert.equal(last.message, 'Your summary is ready. Open the extension to read it.');
+        assert.ok(!last.message.includes('This summary'), 'the summary text is not in the notification');
     });
 
     test(`${browser}: no tab update listener and no openPopup message`, async () => {
