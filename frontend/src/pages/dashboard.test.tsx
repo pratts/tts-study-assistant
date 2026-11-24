@@ -21,6 +21,17 @@ describe('dashboard page', () => {
     expect(screen.getByText('alice@example.com')).toBeInTheDocument() // sidebar user
   })
 
+  it.each([
+    [/Chrome Web Store/, 'https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp'],
+    [/Firefox Add-ons/, 'https://addons.mozilla.org/firefox/addon/tts-study-assistant/'],
+  ])('links to the extension store %s in a new tab', async (name, href) => {
+    renderApp('/dashboard')
+    const link = await screen.findByRole('link', { name })
+    expect(link).toHaveAttribute('href', href)
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
   it('shows empty states without notes', async () => {
     renderApp('/dashboard')
     expect(await screen.findByText('No notes yet')).toBeInTheDocument()

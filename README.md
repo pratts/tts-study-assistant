@@ -3,8 +3,9 @@
 A productivity tool for saving, organizing, and listening to notes from any website: a browser extension for Chrome and Firefox for quick capture and playback, a web dashboard, and a Go API.
 
 [![Chrome Web Store version](https://img.shields.io/chrome-web-store/v/lpnchhblldgnnjgmkbmanggilffhbnnp?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp)
+[![Firefox Add-ons version](https://img.shields.io/amo/v/tts-study-assistant?label=Firefox%20Add-ons)](https://addons.mozilla.org/firefox/addon/tts-study-assistant/)
 
-**[Install the extension from the Chrome Web Store](https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp)** · [Open the web dashboard](https://tts-study-assistant.vercel.app)
+**[Install for Chrome](https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp)** · **[Install for Firefox](https://addons.mozilla.org/firefox/addon/tts-study-assistant/)** · [Open the web dashboard](https://tts-study-assistant.vercel.app)
 
 ## Screenshots
 
@@ -22,7 +23,7 @@ A productivity tool for saving, organizing, and listening to notes from any webs
 - `backend/` — Go/Fiber REST API: JWT auth, notes, AI summaries, user management
 - `frontend/` — React + Vite + shadcn/ui web dashboard
 - `extension/` — browser extension (Chrome and Firefox) for saving and listening to notes from any site
-- `docs/screenshots/` — README and Chrome Web Store screenshots (1280×800)
+- `docs/screenshots/` — README and store listing screenshots (1280×800)
 
 ## Quick start
 
