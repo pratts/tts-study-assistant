@@ -1,4 +1,4 @@
-import { BookOpenIcon, ExternalLinkIcon, LayoutDashboardIcon, NotebookTextIcon, ShieldIcon, UserIcon } from 'lucide-react'
+import { BookOpenIcon, ExternalLinkIcon, LayoutDashboardIcon, NotebookTextIcon, PuzzleIcon, ShieldIcon, UserIcon } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { Link, NavLink, useLocation } from 'react-router'
 import { NavUser } from '@/components/nav-user'
@@ -7,12 +7,14 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
 } from '@/components/ui/sidebar'
+import { EXTENSION_STORES } from '@/lib/stores'
 
 const NAV = [
   { title: 'Dashboard', to: '/dashboard', icon: LayoutDashboardIcon },
@@ -61,6 +63,23 @@ export function AppSidebar(props: ComponentProps<typeof Sidebar>) {
                 </a>
               </SidebarMenuButton>
             </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupLabel>Get the extension</SidebarGroupLabel>
+          <SidebarMenu>
+            {EXTENSION_STORES.map(({ title, href }) => (
+              <SidebarMenuItem key={href}>
+                <SidebarMenuButton asChild tooltip={title}>
+                  <a href={href} target="_blank" rel="noopener noreferrer">
+                    <PuzzleIcon />
+                    <span>{title}</span>
+                    <ExternalLinkIcon className="ml-auto" aria-hidden />
+                    <span className="sr-only">(opens in a new tab)</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

@@ -6,15 +6,17 @@ Save text from any page as a note, listen to it, and get AI summaries. Plain Man
 
 **[TTS Study Assistant on the Chrome Web Store](https://chromewebstore.google.com/detail/tts-study-assistant/lpnchhblldgnnjgmkbmanggilffhbnnp)**: click *Add to Chrome*. Installed copies update automatically when a new version is published.
 
+## Install from Firefox Add-ons
+
+**[TTS Study Assistant on Firefox Add-ons](https://addons.mozilla.org/firefox/addon/tts-study-assistant/)**: click *Add to Firefox* (desktop, Firefox 140 or later). Installed copies update automatically when a new version is approved.
+
 ## Install unpacked (development)
 
 1. Open `chrome://extensions`, enable **Developer mode**.
 2. **Load unpacked** → select this `extension/` folder.
 3. After changing files, press the reload icon on the extension card (and reopen the popup).
 
-### Firefox (in progress)
-
-Firefox support is tracked in the [Firefox release (AMO) milestone](https://github.com/pratts/tts-study-assistant/milestone/1).
+### Firefox
 
 ```sh
 cd extension
@@ -28,7 +30,7 @@ One `manifest.json` serves both browsers:
 
 - **Background:** Chrome uses `background.service_worker`; Firefox doesn't support extension service workers and uses `background.scripts` (an event page) with the same file. Chrome 121+ ignores `scripts`, hence `minimum_chrome_version: 121`.
 - **`browser_specific_settings.gecko`:** the add-on ID (permanent once uploaded to addons.mozilla.org), the minimum Firefox version (140, the first with `data_collection_permissions`) and the data the extension sends to the backend. Chrome ignores this key.
-- **Expected lint warnings:** Firefox doesn't know the `tts` permission and ignores `background.service_worker`; `data_collection_permissions` needs Firefox for Android 142 (Android support is decided in #52). They're listed, with reasons, in [`.github/scripts/extension-lint-allowlist.json`](../.github/scripts/extension-lint-allowlist.json).
+- **Expected lint warnings:** Firefox doesn't know the `tts` permission and ignores `background.service_worker`; `data_collection_permissions` needs Firefox for Android 142 (the AMO listing is desktop only, #52). They're listed, with reasons, in [`.github/scripts/extension-lint-allowlist.json`](../.github/scripts/extension-lint-allowlist.json).
 - **Expected Chrome warning:** `chrome://extensions` shows "'background.scripts' requires manifest version of 2 or lower". Chrome ignores the key and runs the service worker; it's the price of one manifest for both browsers. If the Chrome Web Store ever rejects it, the release can write a manifest per browser instead (#50).
 
 ## Configuration
@@ -124,7 +126,7 @@ One zip serves both stores (one `manifest.json`; each browser ignores the other'
 
 ### addons.mozilla.org
 
-**First version (by hand, once):** the listing needs details only the web form takes.
+**First version (by hand, once; done with v0.3.5):** the listing needs details only the web form takes.
 1. Sign in at the [AMO Developer Hub](https://addons.mozilla.org/developers/) → *Submit a New Add-on* → *On this site* (listed).
 2. Upload the release zip. The add-on ID comes from `browser_specific_settings.gecko.id` and can't change afterwards.
 3. Fill in the listing: name, summary, description, categories, the privacy policy URL (`https://tts-study-assistant.vercel.app/privacy-policy`), screenshots and support email.
